@@ -1,3 +1,5 @@
+使用opencode+deepseek4-pro对xadmin[https://github.com/sshwsfc/xadmin]升级，使其支持python3.12+django4.2，同时对标记为废弃、但未正式删除的的api全部做了调整
+
 Thinking: The user is asking me to create an anchored summary from the conversation history. Let me review the entire conversation and extract the key information.
 The conversation covers:
 1. Fixing a typo in xadmin filters plugin (do_filte → do_filter)
