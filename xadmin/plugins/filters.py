@@ -1,28 +1,103 @@
 import operator
-from future.utils import iteritems
-from xadmin import widgets
-from xadmin.plugins.utils import get_context_dict
-
-from django.contrib.admin.utils import get_fields_from_path, lookup_needs_distinct
-from django.core.exceptions import SuspiciousOperation, ImproperlyConfigured, ValidationError
-from django.db import models
-from django.db.models.fields import FieldDoesNotExist
-from django.db.models.sql.query import LOOKUP_SEP, QUERY_TERMS
-from django.template import loader
-from django.utils import six
-from django.utils.encoding import smart_str
-from django.utils.translation import ugettext as _
-
-from xadmin.filters import manager as filter_manager, FILTER_PREFIX, SEARCH_VAR, DateFieldListFilter, \
-    RelatedFieldSearchFilter
-from xadmin.sites import site
-from xadmin.views import BaseAdminPlugin, ListAdminView
-from xadmin.util import is_related_field
 from functools import reduce
+
+from django.core.exceptions import (
+    FieldDoesNotExist,
+    ImproperlyConfigured,
+    SuspiciousOperation,
+    ValidationError,
+)
+from django.db import models
+from django.db.models.constants import LOOKUP_SEP
+
+# from django.db.models.sql.constants import QUERY_TERMS
+from django.template import loader
+from django.utils.encoding import smart_str
+from django.utils.translation import gettext as _
+
+from xadmin import widgets
+from xadmin.filters import (
+    FILTER_PREFIX,
+    SEARCH_VAR,
+    DateFieldListFilter,
+    RelatedFieldSearchFilter,
+    manager as filter_manager,
+)
+from xadmin.plugins.utils import get_context_dict
+from xadmin.sites import site
+from xadmin.util import get_fields_from_path, is_related_field, lookup_needs_distinct
+from xadmin.views import BaseAdminPlugin, ListAdminView
 
 
 class IncorrectLookupParameters(Exception):
     pass
+
+
+class DjangoFilterWrapper:
+    """Wraps a Django admin.ListFilter to provide xadmin's BaseFilter interface."""
+
+    def __init__(self, django_filter, admin_view):
+        self._filter = django_filter
+        self.admin_view = admin_view
+        self.request = admin_view.request
+        self.title = django_filter.title
+        self.used_params = {}
+        if hasattr(django_filter, 'used_parameters'):
+            for k, v in django_filter.used_parameters.items():
+                self.used_params[k] = v
+
+    @property
+    def is_used(self):
+        return bool(self._filter.used_parameters)
+
+    def do_filter(self, queryset):
+        return self._filter.queryset(self.request, queryset)
+
+    def has_output(self):
+        if hasattr(self._filter, 'has_output'):
+            return self._filter.has_output()
+        return True
+
+    def query_string(self, new_params=None, remove=None):
+        return self.admin_view.get_query_string(new_params, remove)
+
+    def form_params(self):
+        keys = [FILTER_PREFIX + k for k in self.used_params.keys()]
+        return self.admin_view.get_form_params(remove=keys)
+
+    def get_context(self):
+        return {
+            'title': self.title,
+            'spec': self,
+            'form_params': self.form_params(),
+            'choices': list(self.choices()),
+        }
+
+    def choices(self):
+        param_name = getattr(self._filter, 'parameter_name', None)
+        current_value = self._filter.value() if hasattr(self._filter, 'value') else None
+        yield {
+            'selected': current_value is None,
+            'query_string': (
+                self.query_string({}, [FILTER_PREFIX + param_name])
+                if param_name else ''
+            ),
+            'display': _('All'),
+        }
+        if hasattr(self._filter, 'lookup_choices'):
+            for lookup, title in self._filter.lookup_choices:
+                yield {
+                    'selected': str(lookup) == str(current_value),
+                    'query_string': (
+                        self.query_string({FILTER_PREFIX + param_name: lookup})
+                        if param_name else ''
+                    ),
+                    'display': title,
+                }
+
+    def __str__(self):
+        tpl = loader.get_template('xadmin/filters/list.html')
+        return tpl.render(context=self.get_context())
 
 
 class FilterPlugin(BaseAdminPlugin):
@@ -44,8 +119,8 @@ class FilterPlugin(BaseAdminPlugin):
 
         # Last term in lookup is a query term (__exact, __startswith etc)
         # This term can be ignored.
-        if len(parts) > 1 and parts[-1] in QUERY_TERMS:
-            parts.pop()
+        # if len(parts) > 1 and parts[-1] in QUERY_TERMS:
+        #     parts.pop()
 
         # Special case -- foo__id__exact and foo__id queries are implied
         # if foo has been specificially included in the lookup list; so
@@ -59,9 +134,9 @@ class FilterPlugin(BaseAdminPlugin):
                 # Lookups on non-existants fields are ok, since they're ignored
                 # later.
                 return True
-            if hasattr(field, 'rel'):
-                model = field.rel.to
-                rel_name = field.rel.get_related_field().name
+            if hasattr(field, 'remote_field'):
+                model = field.remote_field.model
+                rel_name = field.remote_field.get_related_field().name
             elif is_related_field(field):
                 model = field.model
                 rel_name = model._meta.pk.name
@@ -78,7 +153,7 @@ class FilterPlugin(BaseAdminPlugin):
     def get_list_queryset(self, queryset):
         lookup_params = dict([(smart_str(k)[len(FILTER_PREFIX):], v) for k, v in self.admin_view.params.items()
                               if smart_str(k).startswith(FILTER_PREFIX) and v != ''])
-        for p_key, p_val in iteritems(lookup_params):
+        for p_key, p_val in lookup_params.items():
             if p_val == "False":
                 lookup_params[p_key] = False
         use_distinct = False
@@ -102,6 +177,9 @@ class FilterPlugin(BaseAdminPlugin):
                     # This is simply a custom list filter class.
                     spec = list_filter(self.request, lookup_params,
                                        self.model, self)
+                    # Wrap Django admin.ListFilter to provide xadmin's BaseFilter interface
+                    if not hasattr(spec, 'do_filter') and hasattr(spec, 'queryset'):
+                        spec = DjangoFilterWrapper(spec, self.admin_view)
                 else:
                     field_path = None
                     field_parts = []
@@ -131,7 +209,7 @@ class FilterPlugin(BaseAdminPlugin):
                                     lookup_needs_distinct(self.opts, field_path))
                 if spec and spec.has_output():
                     try:
-                        new_qs = spec.do_filte(queryset)
+                        new_qs = spec.do_filter(queryset) if hasattr(spec, 'do_filter') else spec.queryset(self.request, queryset)
                     except ValidationError as e:
                         new_qs = None
                         self.admin_view.message_user(_("<b>Filtering error:</b> %s") % e.messages[0], 'error')
@@ -142,9 +220,8 @@ class FilterPlugin(BaseAdminPlugin):
 
         self.has_filters = bool(self.filter_specs)
         self.admin_view.filter_specs = self.filter_specs
-        obj = filter(lambda f: f.is_used, self.filter_specs)
-        if six.PY3:
-            obj = list(obj)
+        obj = filter(lambda f: f.is_used if hasattr(f, 'is_used') else bool(getattr(f, 'used_parameters', {})), self.filter_specs)
+        obj = list(obj)
         self.admin_view.used_filter_num = len(obj)
 
         try:
@@ -158,7 +235,7 @@ class FilterPlugin(BaseAdminPlugin):
             # fix a bug by david: In demo, quick filter by IDC Name() cannot be used.
             if isinstance(queryset, models.query.QuerySet) and lookup_params:
                 new_lookup_parames = dict()
-                for k, v in lookup_params.iteritems():
+                for k, v in lookup_params.items():
                     list_v = v.split(',')
                     if len(list_v) > 0:
                         new_lookup_parames.update({k: list_v})
@@ -207,15 +284,11 @@ class FilterPlugin(BaseAdminPlugin):
 
     # Media
     def get_media(self, media):
-        arr = filter(lambda s: isinstance(s, DateFieldListFilter), self.filter_specs)
-        if six.PY3:
-            arr = list(arr)
+        arr = list(filter(lambda s: isinstance(s, DateFieldListFilter), self.filter_specs))
         if bool(arr):
             media = media + self.vendor('datepicker.css', 'datepicker.js',
                                         'xadmin.widget.datetime.js')
-        arr = filter(lambda s: isinstance(s, RelatedFieldSearchFilter), self.filter_specs)
-        if six.PY3:
-            arr = list(arr)
+        arr = list(filter(lambda s: isinstance(s, RelatedFieldSearchFilter), self.filter_specs))
         if bool(arr):
             media = media + self.vendor(
                 'select.js', 'select.css', 'xadmin.widget.select.js')

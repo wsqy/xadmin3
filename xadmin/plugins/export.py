@@ -1,16 +1,15 @@
 import io
 import datetime
 import sys
-from future.utils import iteritems
 
 from django.http import HttpResponse
 from django.template import loader
-from django.utils import six
-from django.utils.encoding import force_text, smart_text
+
+from django.utils.encoding import force_str, smart_str
 from django.utils.html import escape
-from django.utils.translation import ugettext as _
+from django.utils.translation import gettext as _
 from django.utils.xmlutils import SimplerXMLGenerator
-from django.db.models import BooleanField, NullBooleanField
+from django.db.models import BooleanField
 
 from xadmin.plugins.utils import get_context_dict
 from xadmin.sites import site
@@ -64,7 +63,7 @@ class ExportPlugin(BaseAdminPlugin):
 
     def _format_value(self, o):
         if (o.field is None and getattr(o.attr, 'boolean', False)) or \
-           (o.field and isinstance(o.field, (BooleanField, NullBooleanField))):
+           (o.field and isinstance(o.field, BooleanField)):
                 value = o.value
         elif str(o.text).startswith("<span class='text-muted'>"):
             value = escape(str(o.text)[25:-7])
@@ -77,7 +76,7 @@ class ExportPlugin(BaseAdminPlugin):
         rows = context['results']
 
         return [dict([
-            (force_text(headers[i].text), self._format_value(o)) for i, o in
+            (force_str(headers[i].text), self._format_value(o)) for i, o in
             enumerate(filter(lambda c:getattr(c, 'export', False), r.cells))]) for r in rows]
 
     def _get_datas(self, context):
@@ -85,7 +84,7 @@ class ExportPlugin(BaseAdminPlugin):
 
         new_rows = [[self._format_value(o) for o in
             filter(lambda c:getattr(c, 'export', False), r.cells)] for r in rows]
-        new_rows.insert(0, [force_text(c.text) for c in context['result_headers'].cells if c.export])
+        new_rows.insert(0, [force_str(c.text) for c in context['result_headers'].cells if c.export])
         return new_rows
 
     def get_xlsx_export(self, context):
@@ -97,7 +96,7 @@ class ExportPlugin(BaseAdminPlugin):
         model_name = self.opts.verbose_name
         book = xlsxwriter.Workbook(output)
         sheet = book.add_worksheet(
-            u"%s %s" % (_(u'Sheet'), force_text(model_name)))
+            u"%s %s" % (_(u'Sheet'), force_str(model_name)))
         styles = {'datetime': book.add_format({'num_format': 'yyyy-mm-dd hh:mm:ss'}),
                   'date': book.add_format({'num_format': 'yyyy-mm-dd'}),
                   'time': book.add_format({'num_format': 'hh:mm:ss'}),
@@ -134,7 +133,7 @@ class ExportPlugin(BaseAdminPlugin):
         model_name = self.opts.verbose_name
         book = xlwt.Workbook(encoding='utf8')
         sheet = book.add_sheet(
-            u"%s %s" % (_(u'Sheet'), force_text(model_name)))
+            u"%s %s" % (_(u'Sheet'), force_str(model_name)))
         styles = {'datetime': xlwt.easyxf(num_format_str='yyyy-mm-dd hh:mm:ss'),
                   'date': xlwt.easyxf(num_format_str='yyyy-mm-dd'),
                   'time': xlwt.easyxf(num_format_str='hh:mm:ss'),
@@ -165,9 +164,8 @@ class ExportPlugin(BaseAdminPlugin):
     def _format_csv_text(self, t):
         if isinstance(t, bool):
             return _('Yes') if t else _('No')
-        t = t.replace('"', '""').replace(',', '\,')
-        cls_str = str if six.PY3 else basestring
-        if isinstance(t, cls_str):
+        t = t.replace('"', '""').replace(',', '\\,')
+        if isinstance(t, str):
             t = '"%s"' % t
         return t
 
@@ -190,13 +188,13 @@ class ExportPlugin(BaseAdminPlugin):
                 self._to_xml(xml, item)
                 xml.endElement("row")
         elif isinstance(data, dict):
-            for key, value in iteritems(data):
+            for key, value in data.items():
                 key = key.replace(' ', '_')
                 xml.startElement(key, {})
                 self._to_xml(xml, value)
                 xml.endElement(key)
         else:
-            xml.characters(smart_text(data))
+            xml.characters(smart_str(data))
 
     def get_xml_export(self, context):
         results = self._get_objects(context)

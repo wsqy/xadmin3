@@ -1,7 +1,8 @@
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import *
 from crispy_forms.bootstrap import *
-from crispy_forms.utils import render_field, flatatt, TEMPLATE_PACK
+from crispy_forms.utils import render_field, TEMPLATE_PACK
+from django.forms.utils import flatatt
 
 from crispy_forms import layout
 from crispy_forms import bootstrap
@@ -79,7 +80,7 @@ class InputGroup(layout.Field):
 
         super(InputGroup, self).__init__(field, **kwargs)
 
-    def render(self, form, form_style, context, template_pack=TEMPLATE_PACK, **kwargs):
+    def render(self, form, context, template_pack=TEMPLATE_PACK, **kwargs):
         classes = form.fields[self.field].widget.attrs.get('class', '')
         extra_context = {
             'inputs': self.inputs, 
@@ -90,7 +91,7 @@ class InputGroup(layout.Field):
             extra_context['wrapper_class'] = self.wrapper_class
             
         return render_field(
-            self.field, form, form_style, context, template=self.template,
+            self.field, form, context, template=self.template,
             attrs=self.attrs, template_pack=template_pack, extra_context=extra_context, **kwargs)
 
 

@@ -5,10 +5,8 @@ builtin plugin sortable, it touches model field indeed intead
 of only for display.
 """
 
-from __future__ import unicode_literals
-
 from django.template.loader import render_to_string
-from django.core.urlresolvers import reverse
+from django.urls.base import reverse
 from django.db import transaction
 
 from xadmin.views import (
@@ -47,7 +45,7 @@ class SortableListPlugin(BaseAdminPlugin):
 
     def block_top_toolbar(self, context, nodes):
         save_node = render_to_string(
-            'xadmin/blocks/model_list.top_toolbar.saveorder.html', context_instance=context
+            'xadmin/blocks/model_list.top_toolbar.saveorder.html', context=context
         )
         nodes.append(save_node)
 

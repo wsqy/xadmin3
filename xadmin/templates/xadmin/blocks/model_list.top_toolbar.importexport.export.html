@@ -1,4 +1,9 @@
 {% load i18n %}
+{% if direct_export_url %}
+<a href="{{ direct_export_url }}" class="btn btn-default btn-sm">
+    <i class="glyphicon glyphicon-export"></i> {% trans "Export" %} ({{ export_formats.0.get_extension }})
+</a>
+{% else %}
 <div class="btn-group export">
     <a id="export-menu" class="dropdown-toggle btn btn-default btn-sm" data-toggle="modal" data-target="#export-modal" href="#">
         <i class="glyphicon glyphicon-export"></i> {% trans "Export" %}
@@ -17,6 +22,7 @@
                         <input type="hidden" name="_select_across" value=""/>
                         <fieldset class="module aligned">
                             {% for field in form %}
+                                {% if field.name != 'export_items' %}
                                 <div class="form-row">
                                     {{ field.errors }}
 
@@ -28,12 +34,17 @@
                                         <p class="help">{{ field.field.help_text|safe }}</p>
                                     {% endif %}
                                 </div>
+                                {% endif %}
                             {% endfor %}
                         </fieldset>
-                        <label><input name="scope" type="radio" value="current" checked="checked"/> {% trans "Export current page data." %} </label>
-                        <label><input name="scope" type="radio" value="selected"/> {% trans "Export selected data." %} </label>
-                        <label><input name="scope" type="radio" value="all"/> {% trans "Export all data." %} </label>
-                        <label><input name="scope" type="radio" value="header_only"/> {% trans "Export header only." %} </label>
+                        {% if export_fixed_scope %}
+                        <input type="hidden" name="scope" value="{{ export_fixed_scope }}"/>
+                        {% else %}
+                        <label><input name="scope" type="radio" value="current" {% if export_default_scope == "current" %}checked="checked"{% endif %}/> {% trans "Export current page data." %} </label>
+                        <label><input name="scope" type="radio" value="selected" {% if export_default_scope == "selected" %}checked="checked"{% endif %}/> {% trans "Export selected data." %} </label>
+                        <label><input name="scope" type="radio" value="all" {% if export_default_scope == "all" %}checked="checked"{% endif %}/> {% trans "Export all data." %} </label>
+                        <label><input name="scope" type="radio" value="header_only" {% if export_default_scope == "header_only" %}checked="checked"{% endif %}/> {% trans "Export header only." %} </label>
+                        {% endif %}
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-default" data-dismiss="modal">{% trans "Close" %}</button>
@@ -45,3 +56,4 @@
         </div><!-- /.modal-dalog -->
     </div><!-- /.modal -->
 </div>
+{% endif %}

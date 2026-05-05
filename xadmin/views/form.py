@@ -1,4 +1,3 @@
-from __future__ import absolute_import
 import copy
 
 from django import forms
@@ -8,11 +7,11 @@ from django.db import models, transaction
 from django.forms.models import modelform_factory
 from django.http import Http404, HttpResponseRedirect
 from django.template.response import TemplateResponse
-from django.utils import six
-from django.utils.encoding import force_text
+
+from django.utils.encoding import force_str
 from django.utils.html import escape
 from django.template import loader
-from django.utils.translation import ugettext as _
+from django.utils.translation import gettext as _
 from xadmin import widgets
 from xadmin.layout import FormHelper, Layout, Fieldset, TabHolder, Container, Column, Col, Field
 from xadmin.util import unquote
@@ -69,7 +68,7 @@ class FormAdminView(CommAdminView):
 
             layout = Layout(Container(*fs))
 
-            rendered_fields = [i[1] for i in layout.get_field_names()]
+            rendered_fields = [i.name for i in layout.get_field_names()]
             container = layout[0].fields
             other_fieldset = Fieldset(_(u'Other Fields'), *[f for f in fields if f not in rendered_fields])
 
@@ -112,8 +111,7 @@ class FormAdminView(CommAdminView):
         if self.valid_forms():
             self.save_forms()
             response = self.post_response()
-            cls_str = str if six.PY3 else basestring
-            if isinstance(response, cls_str):
+            if isinstance(response, str):
                 return HttpResponseRedirect(response)
             else:
                 return response

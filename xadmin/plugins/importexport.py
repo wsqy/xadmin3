@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# encoding=utf-8
 """
 Author:zcyuefan
 Topic:django-import-export plugin for xadmin to help importing and exporting data using .csv/.xls/.../.json files
@@ -39,33 +38,35 @@ class FooAdmin(object):
 More info about django-import-export please refer https://github.com/django-import-export/django-import-export
 """
 from datetime import datetime
+
+from django.contrib import messages
+from django.contrib.admin.models import ADDITION, CHANGE, DELETION, LogEntry
+from django.contrib.contenttypes.models import ContentType
+from django.core.exceptions import PermissionDenied
+from django.db import transaction
+from django.http import HttpResponse, HttpResponseRedirect
 from django.template import loader
+from django.template.response import TemplateResponse
+from django.urls.base import reverse
+from django.utils.translation import gettext_lazy as _
+from import_export.formats.base_formats import DEFAULT_FORMATS
+from import_export.forms import (
+    ConfirmImportForm,
+    ExportForm,
+    ImportForm,
+)
+from import_export.resources import modelresource_factory
+from import_export.results import RowResult
+from import_export.signals import post_export, post_import
+from import_export.tmp_storages import TempFolderStorage
+
 from xadmin.plugins.utils import get_context_dict
 from xadmin.sites import site
 from xadmin.views import BaseAdminPlugin, ListAdminView, ModelAdminView
 from xadmin.views.base import csrf_protect_m, filter_hook
-from django.db import transaction
-from import_export.admin import DEFAULT_FORMATS, SKIP_ADMIN_LOG, TMP_STORAGE_CLASS
-from import_export.resources import modelresource_factory
-from import_export.forms import (
-    ImportForm,
-    ConfirmImportForm,
-    ExportForm,
-)
-from import_export.results import RowResult
-from import_export.signals import post_export, post_import
-try:
-    from django.utils.encoding import force_text
-except ImportError:
-    from django.utils.encoding import force_unicode as force_text
-from django.utils.translation import ugettext_lazy as _
-from django.template.response import TemplateResponse
-from django.contrib.admin.models import LogEntry, ADDITION, CHANGE, DELETION
-from django.contrib.contenttypes.models import ContentType
-from django.contrib import messages
-from django.core.urlresolvers import reverse
-from django.core.exceptions import PermissionDenied
-from django.http import HttpResponseRedirect, HttpResponse
+
+SKIP_ADMIN_LOG = False
+TMP_STORAGE_CLASS = TempFolderStorage
 
 
 class ImportMenuPlugin(BaseAdminPlugin):
@@ -153,6 +154,7 @@ class ImportBaseView(ModelAdminView):
 
 
 class ImportView(ImportBaseView):
+
     def get_media(self):
         media = super(ImportView, self).get_media()
         media = media + self.vendor('xadmin.plugin.importexport.css')
@@ -160,7 +162,7 @@ class ImportView(ImportBaseView):
 
     @filter_hook
     def get(self, request, *args, **kwargs):
-        if not (self.has_change_permission() and self.has_add_permission()):
+        if not (self.has_change_permission(self.request) and self.has_add_permission(self.request)):
             raise PermissionDenied
 
         resource = self.get_import_resource_class()(**self.get_import_resource_kwargs(request, *args, **kwargs))
@@ -169,8 +171,9 @@ class ImportView(ImportBaseView):
 
         import_formats = self.get_import_formats()
         form = ImportForm(import_formats,
-                          request.POST or None,
-                          request.FILES or None)
+                          [self.get_import_resource_class()],
+                          data=request.POST or None,
+                          files=request.FILES or None)
 
         context['title'] = _("Import") + ' ' + self.opts.verbose_name
         context['form'] = form
@@ -191,7 +194,7 @@ class ImportView(ImportBaseView):
         uploaded file to a local temp file that will be used by
         'process_import' for the actual import.
         """
-        if not (self.has_change_permission() and self.has_add_permission()):
+        if not (self.has_change_permission(self.request) and self.has_add_permission(self.request)):
             raise PermissionDenied
 
         resource = self.get_import_resource_class()(**self.get_import_resource_kwargs(request, *args, **kwargs))
@@ -200,18 +203,19 @@ class ImportView(ImportBaseView):
 
         import_formats = self.get_import_formats()
         form = ImportForm(import_formats,
-                          request.POST or None,
-                          request.FILES or None)
+                          [self.get_import_resource_class()],
+                          data=request.POST or None,
+                          files=request.FILES or None)
 
         if request.POST and form.is_valid():
             input_format = import_formats[
-                int(form.cleaned_data['input_format'])
+                int(form.cleaned_data['format'])
             ]()
             import_file = form.cleaned_data['import_file']
             # first always write the uploaded file to disk as it may be a
             # memory file or else based on settings upload handlers
             tmp_storage = self.get_tmp_storage_class()()
-            data = bytes()
+            data = b''
             for chunk in import_file.chunks():
                 data += chunk
 
@@ -222,12 +226,13 @@ class ImportView(ImportBaseView):
             try:
                 data = tmp_storage.read(input_format.get_read_mode())
                 if not input_format.is_binary() and self.from_encoding:
-                    data = force_text(data, self.from_encoding)
+                    if isinstance(data, bytes):
+                        data = data.decode(self.from_encoding)
                 dataset = input_format.create_dataset(data)
             except UnicodeDecodeError as e:
-                return HttpResponse(_(u"<h1>Imported file has a wrong encoding: %s</h1>" % e))
+                return HttpResponse(_("<h1>Imported file has a wrong encoding: %s</h1>" % e))
             except Exception as e:
-                return HttpResponse(_(u"<h1>%s encountered while trying to read file: %s</h1>" % (type(e).__name__,
+                return HttpResponse(_("<h1>%s encountered while trying to read file: %s</h1>" % (type(e).__name__,
                                                                                                   import_file.name)))
             result = resource.import_data(dataset, dry_run=True,
                                           raise_errors=False,
@@ -240,7 +245,7 @@ class ImportView(ImportBaseView):
                 context['confirm_form'] = ConfirmImportForm(initial={
                     'import_file_name': tmp_storage.name,
                     'original_file_name': import_file.name,
-                    'input_format': form.cleaned_data['input_format'],
+                    'format': form.cleaned_data['format'],
                 })
 
         context['title'] = _("Import") + ' ' + self.opts.verbose_name
@@ -254,6 +259,7 @@ class ImportView(ImportBaseView):
 
 
 class ImportProcessView(ImportBaseView):
+
     @filter_hook
     @csrf_protect_m
     @transaction.atomic
@@ -268,12 +274,13 @@ class ImportProcessView(ImportBaseView):
         if confirm_form.is_valid():
             import_formats = self.get_import_formats()
             input_format = import_formats[
-                int(confirm_form.cleaned_data['input_format'])
+                int(confirm_form.cleaned_data['format'])
             ]()
             tmp_storage = self.get_tmp_storage_class()(name=confirm_form.cleaned_data['import_file_name'])
             data = tmp_storage.read(input_format.get_read_mode())
             if not input_format.is_binary() and self.from_encoding:
-                data = force_text(data, self.from_encoding)
+                if isinstance(data, bytes):
+                    data = data.decode(self.from_encoding)
             dataset = input_format.create_dataset(data)
 
             result = resource.import_data(dataset, dry_run=False,
@@ -299,8 +306,8 @@ class ImportProcessView(ImportBaseView):
                             action_flag=logentry_map[row.import_type],
                             change_message="%s through import_export" % row.import_type,
                         )
-            success_message = str(_(u'Import finished')) + ' , ' + str(_(u'Add')) + ' : %d' % result.totals[
-                RowResult.IMPORT_TYPE_NEW] + ' , ' + str(_(u'Update')) + ' : %d' % result.totals[
+            success_message = str(_('Import finished')) + ' , ' + str(_('Add')) + ' : %d' % result.totals[
+                RowResult.IMPORT_TYPE_NEW] + ' , ' + str(_('Update')) + ' : %d' % result.totals[
                 RowResult.IMPORT_TYPE_UPDATE]
 
             messages.success(request, success_message)
@@ -313,12 +320,14 @@ class ImportProcessView(ImportBaseView):
             return HttpResponseRedirect(url)
 
 
-class ExportMixin(object):
+class ExportMixin:
     #: resource class
     resource_class = None
     #: template for change_list view
     change_list_template = None
     import_export_args = {}
+    #: fixed export scope, hides the scope selector when set
+    export_fixed_scope = None
     #: template for export view
     # export_template_name = 'xadmin/import_export/export.html'
     #: available export formats
@@ -357,9 +366,9 @@ class ExportMixin(object):
 
     def get_export_filename(self, file_format):
         date_str = datetime.now().strftime('%Y-%m-%d-%H%M%S')
-        filename = "%s-%s.%s" % (self.opts.verbose_name.encode('utf-8'),
-                                 date_str,
-                                 file_format.get_extension())
+        filename = "%s-%s.%s" % (str(self.opts.verbose_name),
+                                  date_str,
+                                  file_format.get_extension())
         return filename
 
     def get_export_queryset(self, request, context):
@@ -369,7 +378,7 @@ class ExportMixin(object):
         Default implementation respects applied search and filters.
         """
         # scope = self.request.POST.get('_select_across', False) == '1'
-        scope = request.GET.get('scope')
+        scope = self.export_fixed_scope or request.GET.get('scope')
         select_across = request.GET.get('_select_across', False) == '1'
         selected = request.GET.get('_selected_actions', '')
         if scope == 'all':
@@ -378,8 +387,8 @@ class ExportMixin(object):
             queryset = []
         elif scope == 'selected':
             if not select_across:
-                selected_pk = selected.split(',')
-                queryset = self.admin_view.queryset().filter(pk__in=selected_pk)
+                selected_pk = [pk for pk in selected.split(',') if pk]
+                queryset = self.admin_view.queryset().filter(pk__in=selected_pk) if selected_pk else self.admin_view.queryset().none()
             else:
                 queryset = self.admin_view.queryset()
         else:
@@ -399,6 +408,8 @@ class ExportMixin(object):
 
 class ExportMenuPlugin(ExportMixin, BaseAdminPlugin):
     import_export_args = {}
+    export_default_scope = 'current'
+    export_fixed_scope = None
 
     # Media
     def get_media(self, media):
@@ -409,13 +420,24 @@ class ExportMenuPlugin(ExportMixin, BaseAdminPlugin):
 
     def block_top_toolbar(self, context, nodes):
         formats = self.get_export_formats()
-        form = ExportForm(formats)
+        form = ExportForm(formats, [self.get_export_resource_class()])
 
         context = get_context_dict(context or {})  # no error!
+        direct_export_url = ''
+        if self.export_fixed_scope and len(formats) == 1:
+            direct_export_url = self.admin_view.get_query_string({
+                '_action_': 'export',
+                'format': '0',
+                'scope': self.export_fixed_scope,
+            })
         context.update({
             'form': form,
             'opts': self.opts,
             'form_params': self.admin_view.get_form_params({'_action_': 'export'}),
+            'export_default_scope': self.export_default_scope,
+            'export_fixed_scope': self.export_fixed_scope,
+            'direct_export_url': direct_export_url,
+            'export_formats': formats,
         })
         nodes.append(loader.render_to_string('xadmin/blocks/model_list.top_toolbar.importexport.export.html',
                                              context=context))
@@ -431,7 +453,7 @@ class ExportPlugin(ExportMixin, BaseAdminPlugin):
         if not has_view_perm:
             raise PermissionDenied
 
-        export_format = self.request.GET.get('file_format')
+        export_format = self.request.GET.get('format')
 
         if not export_format:
             messages.warning(self.request, _('You must select an export format.'))
@@ -441,11 +463,7 @@ class ExportPlugin(ExportMixin, BaseAdminPlugin):
             queryset = self.get_export_queryset(self.request, context)
             export_data = self.get_export_data(file_format, queryset, request=self.request)
             content_type = file_format.get_content_type()
-            # Django 1.7 uses the content_type kwarg instead of mimetype
-            try:
-                response = HttpResponse(export_data, content_type=content_type)
-            except TypeError:
-                response = HttpResponse(export_data, mimetype=content_type)
+            response = HttpResponse(export_data, content_type=content_type)
             response['Content-Disposition'] = 'attachment; filename=%s' % (
                 self.get_export_filename(file_format),
             )

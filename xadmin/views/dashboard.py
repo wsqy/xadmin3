@@ -1,7 +1,7 @@
 from django import forms
 from django.apps import apps
 from django.core.exceptions import PermissionDenied
-from django.core.urlresolvers import reverse, NoReverseMatch
+from django.urls.base import reverse, NoReverseMatch
 from django.template.context_processors import csrf
 from django.db.models.base import ModelBase
 from django.forms.forms import DeclarativeFieldsMetaclass
@@ -9,12 +9,14 @@ from django.forms.utils import flatatt
 from django.template import loader
 from django.http import Http404
 from django.test.client import RequestFactory
-from django.utils.encoding import force_text, smart_text
+from django.utils.encoding import force_str, smart_str
 from django.utils.html import escape
 from django.utils.safestring import mark_safe
-from django.utils.translation import ugettext as _
-from django.utils.http import urlencode, urlquote
+from django.utils.translation import gettext as _
+from django.utils.http import urlencode
+from urllib.parse import quote
 from django.views.decorators.cache import never_cache
+from django.utils.decorators import method_decorator
 from xadmin import widgets as exwidgets
 from xadmin.layout import FormHelper
 from xadmin.models import UserSettings, UserWidget
@@ -23,7 +25,7 @@ from xadmin.sites import site
 from xadmin.views.base import CommAdminView, ModelAdminView, filter_hook, csrf_protect_m
 from xadmin.views.edit import CreateAdminView
 from xadmin.views.list import ListAdminView
-from xadmin.util import unquote, DJANGO_11
+from xadmin.util import unquote
 import copy
 
 
@@ -36,18 +38,15 @@ class WidgetTypeSelect(forms.Widget):
     def render(self, name, value, attrs=None):
         if value is None:
             value = ''
-        if DJANGO_11:
-            final_attrs = self.build_attrs(attrs, extra_attrs={'name': name})
-        else:
-            final_attrs = self.build_attrs(attrs, name=name)
+        final_attrs = self.build_attrs(attrs, extra_attrs={'name': name})
         final_attrs['class'] = 'nav nav-pills nav-stacked'
         output = [u'<ul%s>' % flatatt(final_attrs)]
-        options = self.render_options(force_text(value), final_attrs['id'])
+        options = self.render_options(force_str(value), final_attrs['id'])
         if options:
             output.append(options)
         output.append(u'</ul>')
         output.append('<input type="hidden" id="%s_input" name="%s" value="%s"/>' %
-                      (final_attrs['id'], name, force_text(value)))
+                      (final_attrs['id'], name, force_str(value)))
         return mark_safe(u'\n'.join(output))
 
     def render_option(self, selected_choice, widget, id):
@@ -265,6 +264,7 @@ class HtmlWidget(BaseWidget):
 
 
 class ModelChoiceIterator(object):
+
     def __init__(self, field):
         self.field = field
 
@@ -277,12 +277,11 @@ class ModelChoiceIterator(object):
 
 class ModelChoiceField(forms.ChoiceField):
 
-    def __init__(self, required=True, widget=None, label=None, initial=None,
-                 help_text=None, *args, **kwargs):
+    def __init__(self, *, required=True, widget=None, label=None, initial=None,
+                 help_text=None, **kwargs):
         # Call Field instead of ChoiceField __init__() because we don't need
         # ChoiceField.__init__().
-        forms.Field.__init__(self, required, widget, label, initial, help_text,
-                             *args, **kwargs)
+        forms.Field.__init__(self, **kwargs)
         self.widget.choices = self.choices
 
     def __deepcopy__(self, memo):
@@ -292,7 +291,10 @@ class ModelChoiceField(forms.ChoiceField):
     def _get_choices(self):
         return ModelChoiceIterator(self)
 
-    choices = property(_get_choices, forms.ChoiceField._set_choices)
+    def _set_choices(self, value):
+        self._choices = self.widget.choices = value
+
+    choices = property(_get_choices, _set_choices)
 
     def to_python(self, value):
         if isinstance(value, ModelBase):
@@ -308,7 +310,7 @@ class ModelChoiceField(forms.ChoiceField):
     def valid_value(self, value):
         value = self.prepare_value(value)
         for k, v in self.choices:
-            if value == smart_text(k):
+            if value == smart_str(k):
                 return True
         return False
 
@@ -511,6 +513,7 @@ class Dashboard(CommAdminView):
             wid = widget_manager.get(widget.widget_type)
 
             class widget_with_perm(wid):
+
                 def context(self, context):
                     super(widget_with_perm, self).context(context)
                     context.update({'has_change_permission': self.request.user.has_perm('xadmin.change_userwidget')})
@@ -583,13 +586,13 @@ class Dashboard(CommAdminView):
             'columns': [('col-sm-%d' % int(12 / len(self.widgets)), ws) for ws in self.widgets],
             'has_add_widget_permission': self.has_model_perm(UserWidget, 'add') and self.widget_customiz,
             'add_widget_url': self.get_admin_url('%s_%s_add' % (UserWidget._meta.app_label, UserWidget._meta.model_name)) +
-            "?user=%s&page_id=%s&_redirect=%s" % (self.user.id, self.get_page_id(), urlquote(self.request.get_full_path()))
+            "?user=%s&page_id=%s&_redirect=%s" % (self.user.id, self.get_page_id(), quote(self.request.get_full_path()))
         }
         context = super(Dashboard, self).get_context()
         context.update(new_context)
         return context
 
-    @never_cache
+    @method_decorator(never_cache)
     def get(self, request, *args, **kwargs):
         self.widgets = self.get_widgets()
         return self.template_response('xadmin/views/dashboard.html', self.get_context())
@@ -640,7 +643,7 @@ class ModelDashboard(Dashboard, ModelAdminView):
 
     @filter_hook
     def get_title(self):
-        return self.title % force_text(self.obj)
+        return self.title % force_str(self.obj)
 
     def init_request(self, object_id, *args, **kwargs):
         self.obj = self.get_object(unquote(object_id))
@@ -650,7 +653,7 @@ class ModelDashboard(Dashboard, ModelAdminView):
 
         if self.obj is None:
             raise Http404(_('%(name)s object with primary key %(key)r does not exist.') %
-                          {'name': force_text(self.opts.verbose_name), 'key': escape(object_id)})
+                          {'name': force_str(self.opts.verbose_name), 'key': escape(object_id)})
 
     @filter_hook
     def get_context(self):

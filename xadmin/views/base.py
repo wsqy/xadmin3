@@ -3,7 +3,7 @@ import functools
 import datetime
 import decimal
 from functools import update_wrapper
-from inspect import getargspec
+from inspect import getfullargspec
 
 from django import forms
 from django.apps import apps
@@ -12,19 +12,19 @@ from django.contrib import messages
 from django.contrib.auth import get_permission_codename
 from django.core.exceptions import ValidationError
 from django.core.serializers.json import DjangoJSONEncoder
-from django.core.urlresolvers import reverse
+from django.urls.base import reverse
 from django.http import HttpResponse
-from django.template import Context, Template
+from django.template import Template
 from django.template.response import TemplateResponse
-from django.utils import six
-from django.utils.decorators import method_decorator, classonlymethod
-from django.utils.encoding import force_text, smart_text, smart_str
+
+from django.utils.decorators import method_decorator
+from django.utils.encoding import force_str, smart_str
 from django.utils.functional import Promise
 from django.utils.http import urlencode
-from django.utils.itercompat import is_iterable
+from collections.abc import Iterable as is_iterable
 from django.utils.safestring import mark_safe
 from django.utils.text import capfirst
-from django.utils.translation import ugettext as _
+from django.utils.translation import gettext as _
 from django.views.decorators.csrf import csrf_protect
 from django.views.generic import View
 from collections import OrderedDict
@@ -35,12 +35,33 @@ from xadmin.models import Log
 csrf_protect_m = method_decorator(csrf_protect)
 
 
+class classonlymethod:
+    """Emulates Django's removed classonlymethod decorator (Django 4.0+ compatible)."""
+
+    def __init__(self, method):
+        self._method = method
+        self.__name__ = method.__name__
+        self.__doc__ = method.__doc__
+        self.__wrapped__ = method
+
+    def __get__(self, instance, owner=None):
+        if instance is not None:
+            raise TypeError("This method is available only on the class, not on instances.")
+        from functools import update_wrapper
+        def wrapper(*args, **kwargs):
+            return self._method(owner, *args, **kwargs)
+        update_wrapper(wrapper, self._method)
+        return wrapper
+
+
 class IncorrectPluginArg(Exception):
     pass
+
 
 def get_content_type_for_model(obj):
     from django.contrib.contenttypes.models import ContentType
     return ContentType.objects.get_for_model(obj, for_concrete_model=False)
+
 
 def filter_chain(filters, token, func, *args, **kwargs):
     if token == -1:
@@ -48,7 +69,7 @@ def filter_chain(filters, token, func, *args, **kwargs):
     else:
         def _inner_method():
             fm = filters[token]
-            fargs = getargspec(fm)[0]
+            fargs = getfullargspec(fm)[0]
             if len(fargs) == 1:
                 # Only self arg
                 result = func()
@@ -81,23 +102,22 @@ def filter_hook(func):
     return method
 
 
-def inclusion_tag(file_name, context_class=Context, takes_context=False):
+def inclusion_tag(file_name, context_class=dict, takes_context=False):
     def wrap(func):
         @functools.wraps(func)
         def method(self, context, nodes, *arg, **kwargs):
             _dict = func(self, context, nodes, *arg, **kwargs)
             from django.template.loader import get_template, select_template
-            cls_str = str if six.PY3 else basestring
             if isinstance(file_name, Template):
                 t = file_name
-            elif not isinstance(file_name, cls_str) and is_iterable(file_name):
+            elif not isinstance(file_name, str) and is_iterable(file_name):
                 t = select_template(file_name)
             else:
                 t = get_template(file_name)
 
-            _dict['autoescape'] = context.autoescape
-            _dict['use_l10n'] = context.use_l10n
-            _dict['use_tz'] = context.use_tz
+            _dict['autoescape'] = getattr(context, 'autoescape', True)
+            _dict['use_l10n'] = getattr(context, 'use_l10n', True)
+            _dict['use_tz'] = getattr(context, 'use_tz', True)
             _dict['admin_view'] = context['admin_view']
 
             csrf_token = context.get('csrf_token', None)
@@ -110,6 +130,7 @@ def inclusion_tag(file_name, context_class=Context, takes_context=False):
 
 
 class JSONEncoder(DjangoJSONEncoder):
+
     def default(self, o):
         if isinstance(o, datetime.datetime):
             return o.strftime('%Y-%m-%d %H:%M:%S')
@@ -118,12 +139,12 @@ class JSONEncoder(DjangoJSONEncoder):
         elif isinstance(o, decimal.Decimal):
             return str(o)
         elif isinstance(o, Promise):
-            return force_text(o)
+            return force_str(o)
         else:
             try:
                 return super(JSONEncoder, self).default(o)
             except Exception:
-                return smart_text(o)
+                return smart_str(o)
 
 
 class BaseAdminObject(object):
@@ -217,7 +238,7 @@ class BaseAdminObject(object):
 
     def log(self, flag, message, obj=None):
         log = Log(
-            user=self.user, 
+            user=self.user,
             ip_addr=self.request.META['REMOTE_ADDR'],
             action_flag=flag,
             message=message
@@ -225,7 +246,7 @@ class BaseAdminObject(object):
         if obj:
             log.content_type = get_content_type_for_model(obj)
             log.object_id = obj.pk
-            log.object_repr = force_text(obj)
+            log.object_repr = force_str(obj)
         log.save()
 
 
@@ -253,7 +274,7 @@ class BaseAdminView(BaseAdminObject, View):
         self.request = request
         self.request_method = request.method.lower()
         self.user = request.user
-        
+
         self.base_plugins = [p(self) for p in getattr(self,
                                                       "plugin_classes", [])]
 
@@ -317,8 +338,8 @@ class CommAdminView(BaseAdminView):
     base_template = 'xadmin/base_site.html'
     menu_template = 'xadmin/includes/sitemenu_default.html'
 
-    site_title = getattr(settings,"XADMIN_TITLE",_(u"Django Xadmin"))
-    site_footer = getattr(settings,"XADMIN_FOOTER_TITLE",_(u"my-company.inc"))
+    site_title = getattr(settings, "XADMIN_TITLE", _(u"Django Xadmin"))
+    site_footer = getattr(settings, "XADMIN_FOOTER_TITLE", _(u"my-company.inc"))
 
     global_models_icon = {}
     default_model_icon = None
@@ -349,7 +370,7 @@ class CommAdminView(BaseAdminView):
             app_label = model._meta.app_label
             app_icon = None
             model_dict = {
-                'title': smart_text(capfirst(model._meta.verbose_name_plural)),
+                'title': smart_str(capfirst(model._meta.verbose_name_plural)),
                 'url': self.get_model_url(model, "changelist"),
                 'icon': self.get_model_icon(model),
                 'perm': self.get_model_perm(model, 'view'),
@@ -363,12 +384,12 @@ class CommAdminView(BaseAdminView):
                 nav_menu[app_key]['menus'].append(model_dict)
             else:
                 # Find app title
-                app_title = smart_text(app_label.title())
+                app_title = smart_str(app_label.title())
                 if app_label.lower() in self.apps_label_title:
                     app_title = self.apps_label_title[app_label.lower()]
                 else:
-                    app_title = smart_text(apps.get_app_config(app_label).verbose_name)
-                #find app icon
+                    app_title = smart_str(apps.get_app_config(app_label).verbose_name)
+                # find app icon
                 if app_label.lower() in self.apps_icons:
                     app_icon = self.apps_icons[app_label.lower()]
 
@@ -428,7 +449,7 @@ class CommAdminView(BaseAdminView):
                 return item
 
             nav_menu = [filter_item(item) for item in menus if check_menu_permission(item)]
-            nav_menu = list(filter(lambda x:x, nav_menu))
+            nav_menu = list(filter(lambda x: x, nav_menu))
 
             if not settings.DEBUG:
                 self.request.session['nav_menu'] = json.dumps(nav_menu, cls=JSONEncoder, ensure_ascii=False)
@@ -476,7 +497,8 @@ class CommAdminView(BaseAdminView):
         return [{
             'url': self.get_admin_url('index'),
             'title': _('Home')
-            }]
+        }]
+
 
 class ModelAdminView(CommAdminView):
 
@@ -500,7 +522,7 @@ class ModelAdminView(CommAdminView):
             "opts": self.opts,
             "app_label": self.app_label,
             "model_name": self.model_name,
-            "verbose_name": force_text(self.opts.verbose_name),
+            "verbose_name": force_str(self.opts.verbose_name),
             'model_icon': self.get_model_icon(self.model),
         }
         context = super(ModelAdminView, self).get_context()
@@ -522,11 +544,10 @@ class ModelAdminView(CommAdminView):
         Get model object instance by object_id, used for change admin view
         """
         # first get base admin view property queryset, return default model queryset
-        queryset = self.queryset()
-        model = queryset.model
+        model = self.model
         try:
             object_id = model._meta.pk.to_python(object_id)
-            return queryset.get(pk=object_id)
+            return model.objects.get(pk=object_id)
         except (model.DoesNotExist, ValidationError):
             return None
 
@@ -542,7 +563,7 @@ class ModelAdminView(CommAdminView):
     def model_admin_url(self, name, *args, **kwargs):
         return reverse(
             "%s:%s_%s_%s" % (self.admin_site.app_name, self.opts.app_label,
-            self.model_name, name), args=args, kwargs=kwargs)
+                             self.model_name, name), args=args, kwargs=kwargs)
 
     def get_model_perms(self):
         """
@@ -552,9 +573,9 @@ class ModelAdminView(CommAdminView):
         """
         return {
             'view': self.has_view_permission(),
-            'add': self.has_add_permission(),
-            'change': self.has_change_permission(),
-            'delete': self.has_delete_permission(),
+            'add': self.has_add_permission(self.request),
+            'change': self.has_change_permission(self.request),
+            'delete': self.has_delete_permission(self.request),
         }
 
     def get_template_list(self, template_name):
@@ -584,17 +605,17 @@ class ModelAdminView(CommAdminView):
         view_codename = get_permission_codename('view', self.opts)
         change_codename = get_permission_codename('change', self.opts)
 
-        return ('view' not in self.remove_permissions) and (self.user.has_perm('%s.%s' % (self.app_label, view_codename)) or \
-            self.user.has_perm('%s.%s' % (self.app_label, change_codename)))
+        return ('view' not in self.remove_permissions) and (self.user.has_perm('%s.%s' % (self.app_label, view_codename)) or
+                                                            self.user.has_perm('%s.%s' % (self.app_label, change_codename)))
 
-    def has_add_permission(self):
+    def has_add_permission(self, request=None):
         codename = get_permission_codename('add', self.opts)
         return ('add' not in self.remove_permissions) and self.user.has_perm('%s.%s' % (self.app_label, codename))
 
-    def has_change_permission(self, obj=None):
+    def has_change_permission(self, request=None, obj=None):
         codename = get_permission_codename('change', self.opts)
         return ('change' not in self.remove_permissions) and self.user.has_perm('%s.%s' % (self.app_label, codename))
 
-    def has_delete_permission(self, obj=None):
+    def has_delete_permission(self, request=None, obj=None):
         codename = get_permission_codename('delete', self.opts)
         return ('delete' not in self.remove_permissions) and self.user.has_perm('%s.%s' % (self.app_label, codename))

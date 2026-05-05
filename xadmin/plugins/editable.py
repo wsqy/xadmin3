@@ -2,11 +2,12 @@ from django import template
 from django.core.exceptions import PermissionDenied, ObjectDoesNotExist
 from django.db import models, transaction
 from django.forms.models import modelform_factory
+from django.forms import Media
 from django.http import Http404, HttpResponse
-from django.utils.encoding import force_text, smart_text
+from django.utils.encoding import force_str, smart_str
 from django.utils.html import escape, conditional_escape
 from django.utils.safestring import mark_safe
-from django.utils.translation import ugettext as _
+from django.utils.translation import gettext as _
 from xadmin.plugins.ajax import JsonErrorDict
 from xadmin.sites import site
 from xadmin.util import lookup_field, display_for_field, label_for_field, unquote, boolean_icon
@@ -26,13 +27,13 @@ class EditablePlugin(BaseAdminPlugin):
         self.editable_need_fields = {}
 
     def init_request(self, *args, **kwargs):
-        active = bool(self.request.method == 'GET' and self.admin_view.has_change_permission() and self.list_editable)
+        active = bool(self.request.method == 'GET' and self.admin_view.has_change_permission(self.request) and self.list_editable)
         if active:
             self.model_form = self.get_model_view(ModelFormAdminUtil, self.model).form_obj
         return active
 
     def result_item(self, item, obj, field_name, row):
-        if self.list_editable and item.field and item.field.editable and (field_name in self.list_editable):            
+        if self.list_editable and item.field and item.field.editable and (field_name in self.list_editable):
             pk = getattr(obj, obj._meta.pk.attname)
             field_label = label_for_field(field_name, obj,
                                           model_admin=self.admin_view,
@@ -52,7 +53,12 @@ class EditablePlugin(BaseAdminPlugin):
     # Media
     def get_media(self, media):
         if self.editable_need_fields:
-            media = media + self.model_form.media + \
+
+            try:
+                m = self.model_form.media
+            except:
+                m = Media()
+            media = media + m +\
                 self.vendor(
                     'xadmin.plugin.editable.js', 'xadmin.widget.editable.css')
         return media
@@ -71,11 +77,11 @@ class EditPatchView(ModelFormAdminView, ListAdminView):
 
         if self.org_obj is None:
             raise Http404(_('%(name)s object with primary key %(key)r does not exist.') %
-                          {'name': force_text(self.opts.verbose_name), 'key': escape(object_id)})
+                          {'name': force_str(self.opts.verbose_name), 'key': escape(object_id)})
 
     def get_new_field_html(self, f):
         result = self.result_item(self.org_obj, f, {'is_display_first':
-                                  False, 'object': self.org_obj})
+                                                    False, 'object': self.org_obj})
         return mark_safe(result.text) if result.allow_tags else conditional_escape(result.text)
 
     def _get_new_field_html(self, field_name):
@@ -92,9 +98,9 @@ class EditPatchView(ModelFormAdminView, ListAdminView):
                     allow_tags = True
                     text = boolean_icon(value)
                 else:
-                    text = smart_text(value)
+                    text = smart_str(value)
             else:
-                if isinstance(f.rel, models.ManyToOneRel):
+                if isinstance(f.remote_field, models.ManyToOneRel):
                     field_val = getattr(self.org_obj, f.name)
                     if field_val is None:
                         text = EMPTY_CHANGELIST_VALUE
@@ -124,7 +130,7 @@ class EditPatchView(ModelFormAdminView, ListAdminView):
         s = '{% load i18n crispy_forms_tags %}<form method="post" action="{{action_url}}">{% crispy form %}' + \
             '<button type="submit" class="btn btn-success btn-block btn-sm">{% trans "Apply" %}</button></form>'
         t = template.Template(s)
-        c = template.Context({'form': form, 'action_url': self.model_admin_url('patch', self.org_obj.pk)})
+        c = {'form': form, 'action_url': self.model_admin_url('patch', self.org_obj.pk)}
 
         return HttpResponse(t.render(c))
 
@@ -155,6 +161,7 @@ class EditPatchView(ModelFormAdminView, ListAdminView):
             result['errors'] = JsonErrorDict(form.errors, form).as_json()
 
         return self.render_response(result)
+
 
 site.register_plugin(EditablePlugin, ListAdminView)
 site.register_modelview(r'^(.+)/patch/$', EditPatchView, name='%s_%s_patch')

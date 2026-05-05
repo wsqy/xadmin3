@@ -1,6 +1,6 @@
 from django.apps import AppConfig
 from django.core import checks
-from django.utils.translation import ugettext_lazy as _
+from django.utils.translation import gettext_lazy as _
 import xadmin
 
 
@@ -9,6 +9,7 @@ class XAdminConfig(AppConfig):
 
     name = 'xadmin'
     verbose_name = _("Administration")
+    default = True
 
     def ready(self):
         self.module.autodiscover()

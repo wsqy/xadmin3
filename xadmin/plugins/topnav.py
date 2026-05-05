@@ -1,8 +1,8 @@
 
 from django.template import loader
 from django.utils.text import capfirst
-from django.core.urlresolvers import reverse, NoReverseMatch
-from django.utils.translation import ugettext as _
+from django.urls.base import reverse, NoReverseMatch
+from django.utils.translation import gettext as _
 
 from xadmin.sites import site
 from xadmin.filters import SEARCH_VAR

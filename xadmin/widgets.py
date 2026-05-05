@@ -1,20 +1,19 @@
 """
 Form Widget classes specific to the Django admin site.
 """
-from __future__ import absolute_import
 from itertools import chain
 from django import forms
 try:
     from django.forms.widgets import ChoiceWidget as RadioChoiceInput
 except:
     from django.forms.widgets import RadioFieldRenderer, RadioChoiceInput
-from django.utils.encoding import force_text
+from django.utils.encoding import force_str
 
 from django.utils.safestring import mark_safe
 from django.utils.html import conditional_escape
-from django.utils.translation import ugettext as _
+from django.utils.translation import gettext as _
 
-from .util import vendor, DJANGO_11
+from .util import vendor
 
 
 class AdminDateWidget(forms.DateInput):
@@ -29,8 +28,8 @@ class AdminDateWidget(forms.DateInput):
             final_attrs.update(attrs)
         super(AdminDateWidget, self).__init__(attrs=final_attrs, format=format)
 
-    def render(self, name, value, attrs=None):
-        input_html = super(AdminDateWidget, self).render(name, value, attrs)
+    def render(self, name, value, attrs=None, renderer=None):
+        input_html = super(AdminDateWidget, self).render(name, value, attrs, renderer)
         return mark_safe('<div class="input-group date bootstrap-datepicker"><span class="input-group-addon"><i class="fa fa-calendar"></i></span>%s'
                          '<span class="input-group-btn"><button class="btn btn-default" type="button">%s</button></span></div>' % (input_html, _(u'Today')))
 
@@ -47,8 +46,8 @@ class AdminTimeWidget(forms.TimeInput):
             final_attrs.update(attrs)
         super(AdminTimeWidget, self).__init__(attrs=final_attrs, format=format)
 
-    def render(self, name, value, attrs=None):
-        input_html = super(AdminTimeWidget, self).render(name, value, attrs)
+    def render(self, name, value, attrs=None, renderer=None):
+        input_html = super(AdminTimeWidget, self).render(name, value, attrs, renderer)
         return mark_safe('<div class="input-group time bootstrap-clockpicker"><span class="input-group-addon"><i class="fa fa-clock-o">'
                          '</i></span>%s<span class="input-group-btn"><button class="btn btn-default" type="button">%s</button></span></div>' % (input_html, _(u'Now')))
 
@@ -71,92 +70,96 @@ class AdminSplitDateTime(forms.SplitDateTimeWidget):
         # we want to define widgets.
         forms.MultiWidget.__init__(self, widgets, attrs)
 
-    def render(self, name, value, attrs=None):
-        if DJANGO_11:
-            input_html = [ht for ht in super(AdminSplitDateTime, self).render(name, value, attrs).replace(
-                '/><input', '/>\n<input').split('\n') if ht != '']
-            # return input_html
-            return mark_safe('<div class="datetime clearfix"><div class="input-group date bootstrap-datepicker"><span class="input-group-addon"><i class="fa fa-calendar"></i></span>%s'
-                             '<span class="input-group-btn"><button class="btn btn-default" type="button">%s</button></span></div>'
-                             '<div class="input-group time bootstrap-clockpicker"><span class="input-group-addon"><i class="fa fa-clock-o">'
-                             '</i></span>%s<span class="input-group-btn"><button class="btn btn-default" type="button">%s</button></span></div></div>' % (input_html[0], _(u'Today'), input_html[1], _(u'Now')))
-        else:
-            return super(AdminSplitDateTime, self).render(name, value, attrs)
+    def render(self, name, value, attrs=None, renderer=None):
+        input_html = [ht for ht in super(AdminSplitDateTime, self).render(name, value, attrs, renderer).replace('><input', '>\n<input').split('\n') if ht != '']
+        # return input_html
+        return mark_safe('<div class="datetime clearfix"><div class="input-group date bootstrap-datepicker"><span class="input-group-addon"><i class="fa fa-calendar"></i></span>%s'
+                         '<span class="input-group-btn"><button class="btn btn-default" type="button">%s</button></span></div>'
+                         '<div class="input-group time bootstrap-clockpicker"><span class="input-group-addon"><i class="fa fa-clock-o">'
+                         '</i></span>%s<span class="input-group-btn"><button class="btn btn-default" type="button">%s</button></span></div></div>' % (input_html[0], _(u'Today'), input_html[1], _(u'Now')))
 
     def format_output(self, rendered_widgets):
         return mark_safe(u'<div class="datetime clearfix">%s%s</div>' %
                          (rendered_widgets[0], rendered_widgets[1]))
 
 
-class AdminRadioInput(RadioChoiceInput):
-
-    def render(self, name=None, value=None, attrs=None, choices=()):
-        name = name or self.name
-        value = value or self.value
-        attrs = attrs or self.attrs
-        attrs['class'] = attrs.get('class', '').replace('form-control', '')
-        if 'id' in self.attrs:
-            label_for = ' for="%s_%s"' % (self.attrs['id'], self.index)
-        else:
-            label_for = ''
-        choice_label = conditional_escape(force_text(self.choice_label))
-        if attrs.get('inline', False):
-            return mark_safe(u'<label%s class="radio-inline">%s %s</label>' % (label_for, self.tag(), choice_label))
-        else:
-            return mark_safe(u'<div class="radio"><label%s>%s %s</label></div>' % (label_for, self.tag(), choice_label))
-
-
-class AdminRadioFieldRenderer(forms.RadioSelect):
-
-    def __iter__(self):
-        for i, choice in enumerate(self.choices):
-            yield AdminRadioInput(self.name, self.value, self.attrs.copy(), choice, i)
-
-    def __getitem__(self, idx):
-        choice = self.choices[idx]  # Let the IndexError propogate
-        return AdminRadioInput(self.name, self.value, self.attrs.copy(), choice, idx)
-
-    def render(self):
-        return mark_safe(u'\n'.join([force_text(w) for w in self]))
-
-
 class AdminRadioSelect(forms.RadioSelect):
-    renderer = AdminRadioFieldRenderer
+    def render(self, name, value, attrs=None, renderer=None):
+        if value is None:
+            value = ''
+        has_id = attrs and 'id' in attrs
+        final_attrs = self.build_attrs(attrs, extra_attrs={'name': name})
+        final_attrs['class'] = final_attrs.get('class', '').replace('form-control', '')
+        output = []
+        str_values = set([force_str(v) for v in ([value] if not isinstance(value, (list, tuple)) else value)])
+        _choices = self.choices
+        if callable(_choices):
+            _choices = _choices()
+        if callable(_choices) or not isinstance(_choices, (list, tuple)):
+            _choices = list(_choices) if _choices else []
+        for i, (option_value, option_label) in enumerate(_choices):
+            if has_id:
+                final_attrs = dict(final_attrs, id='%s_%s' % (attrs['id'], i))
+                label_for = ' for="%s"' % final_attrs['id']
+            else:
+                label_for = ''
+            option_value = force_str(option_value)
+            checked = ' checked' if option_value in str_values else ''
+            inline = final_attrs.pop('inline', False) if i == 0 else final_attrs.get('inline', False)
+            input_attrs = final_attrs.copy()
+            input_attrs['type'] = 'radio'
+            input_attrs['value'] = option_value
+            if checked:
+                input_attrs['checked'] = 'checked'
+            attr_str = ' '.join(['%s="%s"' % (k, conditional_escape(v)) for k, v in input_attrs.items()])
+            input_html = '<input %s/>' % attr_str
+            option_label = conditional_escape(force_str(option_label))
+            if inline:
+                output.append('<label%s class="radio-inline">%s %s</label>' % (label_for, input_html, option_label))
+            else:
+                output.append('<div class="radio"><label%s>%s %s</label></div>' % (label_for, input_html, option_label))
+        return mark_safe('\n'.join(output))
 
 
 class AdminCheckboxSelect(forms.CheckboxSelectMultiple):
 
-    def render(self, name, value, attrs=None, choices=()):
+    def render(self, name, value, attrs=None, renderer=None):
         if value is None:
             value = []
         has_id = attrs and 'id' in attrs
-        if DJANGO_11:
-            final_attrs = self.build_attrs(attrs, extra_attrs={'name': name})
-        else:
-            final_attrs = self.build_attrs(attrs, name=name)
+        final_attrs = self.build_attrs(attrs, extra_attrs={'name': name})
         output = []
         # Normalize to strings
-        str_values = set([force_text(v) for v in value])
-        for i, (option_value, option_label) in enumerate(chain(self.choices, choices)):
+        str_values = set([force_str(v) for v in value])
+        _choices = self.choices
+        if callable(_choices):
+            _choices = _choices()
+        if callable(_choices) or not isinstance(_choices, (list, tuple)):
+            _choices = list(_choices) if _choices else []
+        # In Django 4.2+, ChoiceWidget.options is a method, not a data attribute
+        _opts = getattr(self, 'options', [])
+        if callable(_opts):
+            _opts = []
+        for i, (option_value, option_label) in enumerate(chain(_choices, _opts)):
             # If an ID attribute was given, add a numeric index as a suffix,
             # so that the checkboxes don't all have the same ID attribute.
             if has_id:
                 final_attrs = dict(final_attrs, id='%s_%s' % (attrs['id'], i))
-                label_for = u' for="%s"' % final_attrs['id']
+                label_for = ' for="%s"' % final_attrs['id']
             else:
                 label_for = ''
 
             cb = forms.CheckboxInput(
                 final_attrs, check_test=lambda value: value in str_values)
-            option_value = force_text(option_value)
+            option_value = force_str(option_value)
             rendered_cb = cb.render(name, option_value)
-            option_label = conditional_escape(force_text(option_label))
+            option_label = conditional_escape(force_str(option_label))
 
             if final_attrs.get('inline', False):
-                output.append(u'<label%s class="checkbox-inline">%s %s</label>' % (label_for, rendered_cb, option_label))
+                output.append('<label%s class="checkbox-inline">%s %s</label>' % (label_for, rendered_cb, option_label))
             else:
-                output.append(u'<div class="checkbox"><label%s>%s %s</label></div>' % (label_for, rendered_cb, option_label))
-        return mark_safe(u'\n'.join(output))
+                output.append('<div class="checkbox"><label%s>%s %s</label></div>' % (label_for, rendered_cb, option_label))
+        return mark_safe('\n'.join(output))
 
 
 class AdminSelectMultiple(forms.SelectMultiple):

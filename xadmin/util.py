@@ -1,44 +1,39 @@
-from __future__ import absolute_import
 import django
 from django.db import models
-from django.db.models.sql.query import LOOKUP_SEP
+from django.core.exceptions import FieldDoesNotExist
+from django.db.models.constants import LOOKUP_SEP
 from django.db.models.deletion import Collector
 from django.db.models.fields.related import ForeignObjectRel
-from django.forms.forms import pretty_name
-from django.utils import formats, six
+from django.forms.utils import pretty_name
+from django.utils import formats
 from django.utils.html import escape
 from django.utils.safestring import mark_safe
 from django.utils.text import capfirst
-from django.utils.encoding import force_text, smart_text, smart_str
-from django.utils.translation import ungettext
-from django.core.urlresolvers import reverse
+from django.utils.encoding import force_str, smart_str
+from django.utils.translation import ngettext, gettext as _
+from django.urls.base import reverse
 from django.conf import settings
 from django.forms import Media
 from django.utils.translation import get_language
 from django.contrib.admin.utils import label_for_field, help_text_for_field
 from django import VERSION as version
+
+# Compatibility for comments plugin (django.contrib.comments was removed in Django 1.8)
+username_field = 'username'
 import datetime
 import decimal
 
 if 'django.contrib.staticfiles' in settings.INSTALLED_APPS:
-    from django.contrib.staticfiles.templatetags.staticfiles import static
+    from django.templatetags.static import static
 else:
     from django.templatetags.static import static
 
-try:
-    import json
-except ImportError:
-    from django.utils import simplejson as json
+import json
 
 try:
     from django.utils.timezone import template_localtime as tz_localtime
 except ImportError:
     from django.utils.timezone import localtime as tz_localtime
-
-if django.VERSION < (1, 11):
-    DJANGO_11 = False
-else:
-    DJANGO_11 = True
 
 
 def xstatic(*tags):
@@ -48,7 +43,6 @@ def xstatic(*tags):
     fs = []
     lang = get_language()
 
-    cls_str = str if six.PY3 else basestring
     for tag in tags:
         try:
             for p in tag.split('.'):
@@ -63,7 +57,7 @@ def xstatic(*tags):
             else:
                 raise e
 
-        if isinstance(node, cls_str):
+        if isinstance(node, str):
             files = node
         else:
             mode = 'dev'
@@ -84,15 +78,16 @@ def xstatic(*tags):
 
 
 def vendor(*tags):
-    media = Media()
+    css = {'screen': []}
+    js = []
     for tag in tags:
         file_type = tag.split('.')[-1]
         files = xstatic(tag)
         if file_type == 'js':
-            media.add_js(files)
+            js.extend(files)
         elif file_type == 'css':
-            media.add_css({'screen': files})
-    return media
+            css['screen'] += files
+    return Media(css=css, js=js)
 
 
 def lookup_needs_distinct(opts, lookup_path):
@@ -101,8 +96,8 @@ def lookup_needs_distinct(opts, lookup_path):
     """
     field_name = lookup_path.split('__', 1)[0]
     field = opts.get_field(field_name)
-    if ((hasattr(field, 'rel') and
-         isinstance(field.rel, models.ManyToManyRel)) or
+    if ((hasattr(field, 'remote_field') and
+         isinstance(field.remote_field, models.ManyToManyRel)) or
         (is_related_field(field) and
          not field.field.unique)):
         return True
@@ -132,8 +127,7 @@ def quote(s):
     quoting is slightly different so that it doesn't get automatically
     unquoted by the Web browser.
     """
-    cls_str = str if six.PY3 else basestring
-    if not isinstance(s, cls_str):
+    if not isinstance(s, str):
         return s
     res = list(s)
     for i in range(len(res)):
@@ -147,8 +141,7 @@ def unquote(s):
     """
     Undo the effects of quote(). Based heavily on urllib.unquote().
     """
-    cls_str = str if six.PY3 else basestring
-    if not isinstance(s, cls_str):
+    if not isinstance(s, str):
         return s
     mychr = chr
     myatoi = int
@@ -247,8 +240,8 @@ def model_format_dict(obj):
     else:
         opts = obj
     return {
-        'verbose_name': force_text(opts.verbose_name),
-        'verbose_name_plural': force_text(opts.verbose_name_plural)
+        'verbose_name': force_str(opts.verbose_name),
+        'verbose_name_plural': force_str(opts.verbose_name_plural)
     }
 
 
@@ -268,13 +261,13 @@ def model_ngettext(obj, n=None):
         obj = obj.model
     d = model_format_dict(obj)
     singular, plural = d["verbose_name"], d["verbose_name_plural"]
-    return ungettext(singular, plural, n or 0)
+    return ngettext(singular, plural, n or 0)
 
 
 def is_rel_field(name, model):
     if hasattr(name, 'split') and name.find("__") > 0:
         parts = name.split("__")
-        if parts[0] in model._meta.get_all_field_names():
+        if parts[0] in [f.name for f in model._meta.get_fields()]:
             return True
     return False
 
@@ -283,7 +276,7 @@ def lookup_field(name, obj, model_admin=None):
     opts = obj._meta
     try:
         f = opts.get_field(name)
-    except models.FieldDoesNotExist:
+    except FieldDoesNotExist:
         # For non-field values, the value is either a method, property or
         # returned via a callable.
         if callable(name):
@@ -320,8 +313,9 @@ def admin_urlname(value, arg):
 
 
 def boolean_icon(field_val):
-    return mark_safe(u'<i class="%s" alt="%s"></i>' % (
-        {True: 'fa fa-check-circle text-success', False: 'fa fa-times-circle text-error', None: 'fa fa-question-circle muted'}[field_val], field_val))
+    icon_class = {True: 'fa fa-check-circle text-success', False: 'fa fa-times-circle text-danger', None: 'fa fa-question-circle text-muted'}[field_val]
+    label = {True: _('Yes'), False: _('No'), None: _('Unknown')}[field_val]
+    return mark_safe('<i class="%s"></i> %s' % (icon_class, label))
 
 
 def display_for_field(value, field):
@@ -329,9 +323,7 @@ def display_for_field(value, field):
 
     if field.flatchoices:
         return dict(field.flatchoices).get(value, EMPTY_CHANGELIST_VALUE)
-    # NullBooleanField needs special-case null-handling, so it comes
-    # before the general null test.
-    elif isinstance(field, models.BooleanField) or isinstance(field, models.NullBooleanField):
+    elif isinstance(field, models.BooleanField):
         return boolean_icon(value)
     elif value is None:
         return EMPTY_CHANGELIST_VALUE
@@ -343,10 +335,10 @@ def display_for_field(value, field):
         return formats.number_format(value, field.decimal_places)
     elif isinstance(field, models.FloatField):
         return formats.number_format(value)
-    elif isinstance(field.rel, models.ManyToManyRel):
-        return ', '.join([smart_text(obj) for obj in value.all()])
+    elif isinstance(field.remote_field, models.ManyToManyRel):
+        return ', '.join([smart_str(obj) for obj in value.all()])
     else:
-        return smart_text(value)
+        return smart_str(value)
 
 
 def display_for_value(value, boolean=False):
@@ -363,7 +355,7 @@ def display_for_value(value, boolean=False):
     elif isinstance(value, (decimal.Decimal, float)):
         return formats.number_format(value)
     else:
-        return smart_text(value)
+        return smart_str(value)
 
 
 class NotRelationField(Exception):
@@ -375,8 +367,8 @@ def get_model_from_relation(field):
         return field.related_model
     elif is_related_field(field):
         return field.model
-    elif getattr(field, 'rel'):  # or isinstance?
-        return field.rel.to
+    elif getattr(field, 'remote_field'):  # or isinstance?
+        return field.remote_field.model
     else:
         raise NotRelationField
 
@@ -404,7 +396,7 @@ def reverse_field_path(model, path):
                 break
         if direct:
             related_name = field.related_query_name()
-            parent = field.rel.to
+            parent = field.remote_field.model
         else:
             related_name = field.field.name
             parent = field.model
@@ -451,8 +443,8 @@ def get_limit_choices_to_from_path(model, path):
     fields = get_fields_from_path(model, path)
     fields = remove_trailing_data_field(fields)
     limit_choices_to = (
-        fields and hasattr(fields[-1], 'rel') and
-        getattr(fields[-1].rel, 'limit_choices_to', None))
+        fields and hasattr(fields[-1], 'remote_field') and
+        getattr(fields[-1].remote_field, 'limit_choices_to', None))
     if not limit_choices_to:
         return models.Q()  # empty Q
     elif isinstance(limit_choices_to, models.Q):
@@ -482,4 +474,4 @@ def is_related_field(field):
 
 
 def is_related_field2(field):
-    return (hasattr(field, 'rel') and field.rel != None) or is_related_field(field)
+    return (hasattr(field, 'remote_field') and field.remote_field != None) or is_related_field(field)
