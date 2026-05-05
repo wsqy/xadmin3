@@ -214,17 +214,17 @@ class ImportView(ImportBaseView):
             import_file = form.cleaned_data['import_file']
             # first always write the uploaded file to disk as it may be a
             # memory file or else based on settings upload handlers
-            tmp_storage = self.get_tmp_storage_class()()
+            tmp_storage = self.get_tmp_storage_class()(read_mode="rb")
             data = b''
             for chunk in import_file.chunks():
                 data += chunk
 
-            tmp_storage.save(data, input_format.get_read_mode())
+            tmp_storage.save(data)
 
             # then read the file, using the proper format-specific mode
             # warning, big files may exceed memory
             try:
-                data = tmp_storage.read(input_format.get_read_mode())
+                data = tmp_storage.read()
                 if not input_format.is_binary() and self.from_encoding:
                     if isinstance(data, bytes):
                         data = data.decode(self.from_encoding)
@@ -276,8 +276,8 @@ class ImportProcessView(ImportBaseView):
             input_format = import_formats[
                 int(confirm_form.cleaned_data['format'])
             ]()
-            tmp_storage = self.get_tmp_storage_class()(name=confirm_form.cleaned_data['import_file_name'])
-            data = tmp_storage.read(input_format.get_read_mode())
+            tmp_storage = self.get_tmp_storage_class()(name=confirm_form.cleaned_data['import_file_name'], read_mode="rb")
+            data = tmp_storage.read()
             if not input_format.is_binary() and self.from_encoding:
                 if isinstance(data, bytes):
                     data = data.decode(self.from_encoding)

@@ -1,5 +1,5 @@
 使用opencode+deepseek4-pro对[xadmin](https://github.com/sshwsfc/xadmin)升级，使其支持python3.12+django4.2，同时对标记为废弃、但未正式删除的的api全部做了调整，以下是opencode整理的变动
-以下是您提供的xadmin升级日志的整理汇总：
+以下是xadmin升级日志的整理汇总：
 
 ---
 
