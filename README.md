@@ -104,4 +104,29 @@
 - `SimpleListFilter` 采用 `DjangoFilterWrapper` 包装而非修改 Django 源码
 - `export_fixed_scope` 通过 `getattr(self, 'export_fixed_scope', None)` 读取
 
----
+## 新增app及model排序功能
+在项目根目录创建`xadmin_conf.py`
+```
+"""
+xadmin 全局配置模块
+
+此文件由 xadmin autodiscover() 自动加载，用于集中管理 xadmin 的全局设置。
+"""
+
+from xadmin.views.base import CommAdminView
+
+# ---- 应用菜单排序（数字越小越靠前，未配置的按名称字母排序） ----
+CommAdminView.apps_order = {
+    "app_name_1": 1,
+    "app_name_2": 2,
+    "app_name_100": 100,
+}
+
+# ---- 模型菜单排序（按 model 类指定，数字越小越靠前） ----
+# CommAdminView.models_order = {
+#     model_name_1: 1,
+#     model_name_2: 2,
+#     model_name_5: 300,
+# }
+
+```

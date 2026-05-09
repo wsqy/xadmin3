@@ -345,6 +345,8 @@ class CommAdminView(BaseAdminView):
     default_model_icon = None
     apps_label_title = {}
     apps_icons = {}
+    apps_order = {}
+    models_order = {}
 
     def get_site_menu(self):
         return None
@@ -369,12 +371,15 @@ class CommAdminView(BaseAdminView):
                 continue
             app_label = model._meta.app_label
             app_icon = None
+            # Use custom model order if set, otherwise fall back to auto-assigned order
+            model_custom_order = self.models_order.get(model)
+            model_sort_order = model_custom_order if model_custom_order is not None else model_admin.order
             model_dict = {
                 'title': smart_str(capfirst(model._meta.verbose_name_plural)),
                 'url': self.get_model_url(model, "changelist"),
                 'icon': self.get_model_icon(model),
                 'perm': self.get_model_perm(model, 'view'),
-                'order': model_admin.order,
+                'order': model_sort_order,
             }
             if model_dict['url'] in had_urls:
                 continue
@@ -408,11 +413,22 @@ class CommAdminView(BaseAdminView):
             if 'first_url' not in app_menu and model_dict.get('url'):
                 app_menu['first_url'] = model_dict['url']
 
+        # Set app-level order from apps_order config
+        for app_key, app_menu in nav_menu.items():
+            app_label_name = app_key.replace("app:", "", 1)
+            custom_app_order = self.apps_order.get(app_label_name.lower())
+            if custom_app_order is not None:
+                app_menu['order'] = custom_app_order
+
         for menu in nav_menu.values():
             menu['menus'].sort(key=sortkeypicker(['order', 'title']))
 
         nav_menu = list(nav_menu.values())
-        nav_menu.sort(key=lambda x: x['title'])
+        # Sort apps by custom order if any app has order set, else by title
+        if any('order' in app for app in nav_menu):
+            nav_menu.sort(key=lambda x: (x.get('order', 9999), x['title']))
+        else:
+            nav_menu.sort(key=lambda x: x['title'])
 
         site_menu.extend(nav_menu)
 
