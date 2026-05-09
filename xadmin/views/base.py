@@ -366,13 +366,23 @@ class CommAdminView(BaseAdminView):
 
         nav_menu = OrderedDict()
 
+        # Normalize models_order keys to lowercase for case-insensitive matching
+        # (Django model_name is always lowercase, e.g. "company" not "Company")
+        normalized_models_order = {
+            k.lower() if isinstance(k, str) else k: v
+            for k, v in self.models_order.items()
+        }
+
         for model, model_admin in self.admin_site._registry.items():
             if getattr(model_admin, 'hidden_menu', False):
                 continue
             app_label = model._meta.app_label
             app_icon = None
-            # Use custom model order if set, otherwise fall back to auto-assigned order
-            model_custom_order = self.models_order.get(model)
+            # Use custom model order if set (supports both "app_label.ModelName" string key and class key)
+            model_key = f"{model._meta.app_label}.{model._meta.model_name}"
+            model_custom_order = normalized_models_order.get(model_key)
+            if model_custom_order is None:
+                model_custom_order = normalized_models_order.get(model)
             model_sort_order = model_custom_order if model_custom_order is not None else model_admin.order
             model_dict = {
                 'title': smart_str(capfirst(model._meta.verbose_name_plural)),
