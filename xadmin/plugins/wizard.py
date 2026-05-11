@@ -14,8 +14,8 @@ except:
     from django.contrib.formtools.wizard.views import StepsHelper
 
 
-from django.utils.encoding import smart_str
 from django.utils.module_loading import import_string
+from xadmin.util import smart_str
 from django.forms import ValidationError
 from django.forms.models import modelform_factory
 

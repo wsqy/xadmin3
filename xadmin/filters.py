@@ -1,6 +1,6 @@
 from django.db import models
 from django.core.exceptions import ImproperlyConfigured
-from django.utils.encoding import smart_str
+from xadmin.util import smart_str
 from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
 from django.template.loader import get_template

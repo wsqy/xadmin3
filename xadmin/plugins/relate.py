@@ -4,9 +4,8 @@ from itertools import chain
 from django.urls.base import reverse
 # PROXY_PARENTS removed in Django 2.0+, use boolean instead
 
-from django.utils.encoding import force_str
-from django.utils.encoding import smart_str
 from django.utils.safestring import mark_safe
+from xadmin.util import force_str, smart_str
 from django.db.models.constants import LOOKUP_SEP
 from django.utils.translation import gettext as _
 from django.db import models

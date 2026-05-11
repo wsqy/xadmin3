@@ -12,11 +12,15 @@ class SiteMenuStylePlugin(BaseAdminPlugin):
 
     menu_style = None
 
+    def _get_menu_style(self):
+        return self.menu_style or getattr(self.admin_view, 'menu_style', None)
+
     def init_request(self, *args, **kwargs):
-        return bool(self.menu_style) and self.menu_style in BUILDIN_STYLES
+        style = self._get_menu_style()
+        return bool(style) and style in BUILDIN_STYLES
 
     def get_context(self, context):
-        context['menu_template'] = BUILDIN_STYLES[self.menu_style]
+        context['menu_template'] = BUILDIN_STYLES[self._get_menu_style()]
         return context
 
 site.register_plugin(SiteMenuStylePlugin, CommAdminView)

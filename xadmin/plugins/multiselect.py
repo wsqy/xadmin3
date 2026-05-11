@@ -6,8 +6,8 @@ from django import forms
 from django.db.models import ManyToManyField
 from django.forms.utils import flatatt
 from django.template import loader
-from django.utils.encoding import force_str
 from django.utils.html import escape, conditional_escape
+from xadmin.util import force_str
 from django.utils.safestring import mark_safe
 from xadmin.util import vendor
 from xadmin.views import BaseAdminPlugin, ModelFormAdminView

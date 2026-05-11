@@ -5,8 +5,8 @@ from django.db import models
 from django.core.exceptions import PermissionDenied
 from django.forms.models import modelform_factory
 from django.template.response import TemplateResponse
-from django.utils.encoding import force_str
 from django.utils.safestring import mark_safe
+from xadmin.util import force_str
 from django.utils.translation import gettext as _, gettext_lazy
 from xadmin.layout import FormHelper, Layout, Fieldset, Container, Col
 from xadmin.plugins.actions import BaseActionView, ACTION_CHECKBOX_NAME

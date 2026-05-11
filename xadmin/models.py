@@ -8,7 +8,7 @@ from django.utils.translation import gettext_lazy as _, gettext
 from django.urls.base import reverse
 from django.core.serializers.json import DjangoJSONEncoder
 from django.db.models.base import ModelBase
-from django.utils.encoding import smart_str
+from xadmin.util import smart_str
 
 from django.db.models.signals import post_migrate
 from django.contrib.auth.models import Permission

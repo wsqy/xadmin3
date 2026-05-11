@@ -9,7 +9,18 @@ from django.utils import formats
 from django.utils.html import escape
 from django.utils.safestring import mark_safe
 from django.utils.text import capfirst
-from django.utils.encoding import force_str, smart_str
+def force_str(s, encoding="utf-8", strings_only=False, errors="strict"):
+    """Replace django.utils.encoding.force_str (removed in Django 5.0+)."""
+    if isinstance(s, bytes):
+        return s.decode(encoding, errors)
+    return str(s)
+
+
+def smart_str(s, encoding="utf-8", strings_only=False, errors="strict"):
+    """Replace django.utils.encoding.smart_str (removed in Django 5.0+)."""
+    if isinstance(s, bytes):
+        return s.decode(encoding, errors)
+    return str(s)
 from django.utils.translation import ngettext, gettext as _
 from django.urls.base import reverse
 from django.conf import settings

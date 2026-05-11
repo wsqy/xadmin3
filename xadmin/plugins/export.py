@@ -5,8 +5,8 @@ import sys
 from django.http import HttpResponse
 from django.template import loader
 
-from django.utils.encoding import force_str, smart_str
 from django.utils.html import escape
+from xadmin.util import force_str, smart_str
 from django.utils.translation import gettext as _
 from django.utils.xmlutils import SimplerXMLGenerator
 from django.db.models import BooleanField

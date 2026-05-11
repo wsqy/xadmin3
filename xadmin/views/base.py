@@ -3,7 +3,7 @@ import functools
 import datetime
 import decimal
 from functools import update_wrapper
-from inspect import getfullargspec
+from inspect import signature
 
 from django import forms
 from django.apps import apps
@@ -18,7 +18,8 @@ from django.template import Template
 from django.template.response import TemplateResponse
 
 from django.utils.decorators import method_decorator
-from django.utils.encoding import force_str, smart_str
+from xadmin.util import static, json, vendor, sortkeypicker, force_str, smart_str
+
 from django.utils.functional import Promise
 from django.utils.http import urlencode
 from collections.abc import Iterable as is_iterable
@@ -28,7 +29,6 @@ from django.utils.translation import gettext as _
 from django.views.decorators.csrf import csrf_protect
 from django.views.generic import View
 from collections import OrderedDict
-from xadmin.util import static, json, vendor, sortkeypicker
 
 from xadmin.models import Log
 
@@ -69,16 +69,19 @@ def filter_chain(filters, token, func, *args, **kwargs):
     else:
         def _inner_method():
             fm = filters[token]
-            fargs = getfullargspec(fm)[0]
-            if len(fargs) == 1:
-                # Only self arg
+            # signature() strips self for bound methods, so params are
+            # shifted by 1 compared to getfullargspec. A filter method
+            # with only "self" now has 0 params; "self, __" has 1 param.
+            params = list(signature(fm).parameters.keys())
+            if len(params) == 0:
+                # Only self arg, no plugin hook param
                 result = func()
                 if result is None:
                     return fm()
                 else:
                     raise IncorrectPluginArg(u'Plugin filter method need a arg to receive parent method result.')
             else:
-                return fm(func if fargs[1] == '__' else func(), *args, **kwargs)
+                return fm(func if params[0] == '__' else func(), *args, **kwargs)
         return filter_chain(filters, token - 1, _inner_method, *args, **kwargs)
 
 
@@ -116,7 +119,6 @@ def inclusion_tag(file_name, context_class=dict, takes_context=False):
                 t = get_template(file_name)
 
             _dict['autoescape'] = getattr(context, 'autoescape', True)
-            _dict['use_l10n'] = getattr(context, 'use_l10n', True)
             _dict['use_tz'] = getattr(context, 'use_tz', True)
             _dict['admin_view'] = context['admin_view']
 

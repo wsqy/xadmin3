@@ -8,8 +8,8 @@ from django.db import models
 from django.http import HttpResponse, HttpResponseNotFound
 from django.template import loader
 from django.utils.http import urlencode
-from django.utils.encoding import force_str, smart_str
 from django.utils.translation import gettext_lazy as _, gettext
+from xadmin.util import force_str, smart_str
 
 from xadmin.plugins.utils import get_context_dict
 from xadmin.sites import site

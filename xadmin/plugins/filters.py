@@ -12,7 +12,6 @@ from django.db.models.constants import LOOKUP_SEP
 
 # from django.db.models.sql.constants import QUERY_TERMS
 from django.template import loader
-from django.utils.encoding import smart_str
 from django.utils.translation import gettext as _
 
 from xadmin import widgets

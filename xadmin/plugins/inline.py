@@ -8,8 +8,8 @@ from django.template import loader
 from django.template.loader import render_to_string
 from django.contrib.auth import get_permission_codename
 
-from django.utils.encoding import smart_str
 from crispy_forms.utils import TEMPLATE_PACK
+from xadmin.util import smart_str
 
 from xadmin.layout import FormHelper, Layout, flatatt, Container, Column, Field, Fieldset
 from xadmin.plugins.utils import get_context_dict

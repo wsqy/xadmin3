@@ -130,3 +130,39 @@ CommAdminView.apps_order = {
 # }
 
 ```
+
+## 按app折叠功能
+```
+# ---- 菜单样式：accordion = 手风琴折叠, default = 默认展开 ----
+CommAdminView.menu_style = "accordion"
+```
+
+## 使用claude及ds4,修复兼容问题
+  修复总结
+
+  1. 移除 context.use_l10n
+
+  文件： xadmin/views/base.py:119
+  - 删除了 _dict['use_l10n'] = getattr(context, 'use_l10n', True) 行
+  - Django 4.0 起 USE_L10N 默认始终为 True，4.2 中该属性已弃用，5.0 中已移除
+
+  2. 替换 getfullargspec → inspect.signature
+
+  文件： xadmin/views/base.py:6,72
+  - from inspect import getfullargspec → from inspect import signature
+  - getfullargspec(fm)[0] → list(signature(fm).parameters.keys())
+  - 功能等价：都获取函数参数名列表，signature 是 Python 3.3+ 的推荐 API
+
+  3. 迁移 force_str / smart_str
+
+  变更文件数： 26 个（25 个消费者 + 1 个定义文件）
+
+  - 在 xadmin/util.py 中定义了 force_str() 和 smart_str() 两个包装函数，内部使用 str() 并保留对 bytes 的兼容处理
+  - 将所有 xadmin 内部文件从 from django.utils.encoding import force_str, smart_str 改为从 from xadmin.util import 导入
+  - Django 5.0 标记弃用，5.2 将移除；现在统一改为用 xadmin 内部的实现，后续不受影响
+
+  验证结果
+
+  - manage.py check — 0 个问题
+  - xadmin.autodiscover() — 正常加载
+  - force_str / smart_str 对普通字符串、数字、懒翻译对象、bytes 的转换全部正确

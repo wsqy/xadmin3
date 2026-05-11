@@ -4,12 +4,12 @@ from django.http import Http404, HttpResponseRedirect
 from django.template.response import TemplateResponse
 from django import VERSION as django_version
 
-from django.utils.encoding import force_str
+
 from django.utils.html import escape
 from django.utils.translation import gettext as _
 from django.contrib.admin.utils import get_deleted_objects
 
-from xadmin.util import unquote
+from xadmin.util import unquote, force_str
 from xadmin.views.edit import UpdateAdminView
 from xadmin.views.detail import DetailAdminView
 from xadmin.views.base import ModelAdminView, filter_hook, csrf_protect_m

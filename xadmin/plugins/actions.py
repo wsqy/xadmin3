@@ -6,8 +6,8 @@ from django.http import HttpResponse, HttpResponseRedirect
 from django.template import loader
 from django.template.response import TemplateResponse
 
-from django.utils.encoding import force_str
 from django.utils.safestring import mark_safe
+from xadmin.util import force_str
 from django.utils.translation import gettext as _, ngettext
 from django.utils.text import capfirst
 
