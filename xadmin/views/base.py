@@ -366,21 +366,16 @@ class CommAdminView(BaseAdminView):
                     get_url(m, had_urls)
         get_url({'menus': site_menu}, had_urls)
 
-        nav_menu = OrderedDict()
-
-        # Normalize models_order keys to lowercase for case-insensitive matching
-        # (Django model_name is always lowercase, e.g. "company" not "Company")
+        # ---- build model index: "app_label.ModelName" → model_dict ----
         normalized_models_order = {
             k.lower() if isinstance(k, str) else k: v
             for k, v in self.models_order.items()
         }
 
+        model_index = {}
         for model, model_admin in self.admin_site._registry.items():
             if getattr(model_admin, 'hidden_menu', False):
                 continue
-            app_label = model._meta.app_label
-            app_icon = None
-            # Use custom model order if set (supports both "app_label.ModelName" string key and class key)
             model_key = f"{model._meta.app_label}.{model._meta.model_name}"
             model_custom_order = normalized_models_order.get(model_key)
             if model_custom_order is None:
@@ -393,57 +388,90 @@ class CommAdminView(BaseAdminView):
                 'perm': self.get_model_perm(model, 'view'),
                 'order': model_sort_order,
             }
-            if model_dict['url'] in had_urls:
-                continue
+            if model_dict['url'] not in had_urls:
+                model_index[model_key] = model_dict
 
+        # ---- step 1: menu_groups (3-level: top → sub-group → model) ----
+        consumed = set()
+        nav_menu = []
+        menu_groups = getattr(self, 'menu_groups', None) or []
+
+        for top_idx, top_group in enumerate(menu_groups):
+            has_menus = False
+            top_entry = {
+                'title': top_group.get('title', ''),
+                'icon': top_group.get('icon', ''),
+                'order': top_group.get('order', top_idx),
+                'menus': [],
+            }
+            for sub_group in top_group.get('groups', []):
+                sub_entry = {
+                    'title': sub_group.get('title', ''),
+                    'icon': sub_group.get('icon', ''),
+                    'menus': [],
+                }
+                for model_ref in sub_group.get('models', []):
+                    if model_ref in model_index:
+                        sub_entry['menus'].append(model_index[model_ref])
+                        consumed.add(model_ref)
+                if sub_entry['menus']:
+                    top_entry['menus'].append(sub_entry)
+                    has_menus = True
+            # direct models under top group (2-level, for simple cases)
+            for model_ref in top_group.get('models', []):
+                if model_ref in model_index:
+                    top_entry['menus'].append(model_index[model_ref])
+                    consumed.add(model_ref)
+                    has_menus = True
+            if has_menus:
+                nav_menu.append(top_entry)
+
+        # ---- step 2: remaining models → auto-group by app_label ----
+        app_menu_map = OrderedDict()
+        for model_key, model_dict in model_index.items():
+            if model_key in consumed:
+                continue
+            app_label = model_key.split('.')[0]
             app_key = "app:%s" % app_label
-            if app_key in nav_menu:
-                nav_menu[app_key]['menus'].append(model_dict)
-            else:
-                # Find app title
+
+            if app_key not in app_menu_map:
                 app_title = smart_str(app_label.title())
                 if app_label.lower() in self.apps_label_title:
                     app_title = self.apps_label_title[app_label.lower()]
                 else:
-                    app_title = smart_str(apps.get_app_config(app_label).verbose_name)
-                # find app icon
-                if app_label.lower() in self.apps_icons:
-                    app_icon = self.apps_icons[app_label.lower()]
-
-                nav_menu[app_key] = {
+                    try:
+                        app_title = smart_str(apps.get_app_config(app_label).verbose_name)
+                    except Exception:
+                        pass
+                app_icon = self.apps_icons.get(app_label.lower())
+                app_order = self.apps_order.get(app_label.lower())
+                app_menu_map[app_key] = {
                     'title': app_title,
-                    'menus': [model_dict],
+                    'icon': app_icon or '',
+                    'order': app_order,
+                    'menus': [],
+                    'first_icon': app_icon,
                 }
 
-            app_menu = nav_menu[app_key]
-            if app_icon:
-                app_menu['first_icon'] = app_icon
-            elif ('first_icon' not in app_menu or
-                    app_menu['first_icon'] == self.default_model_icon) and model_dict.get('icon'):
+            app_menu = app_menu_map[app_key]
+            app_menu['menus'].append(model_dict)
+            if app_menu.get('first_icon') is None and model_dict.get('icon'):
                 app_menu['first_icon'] = model_dict['icon']
-
             if 'first_url' not in app_menu and model_dict.get('url'):
                 app_menu['first_url'] = model_dict['url']
 
-        # Set app-level order from apps_order config
-        for app_key, app_menu in nav_menu.items():
-            app_label_name = app_key.replace("app:", "", 1)
-            custom_app_order = self.apps_order.get(app_label_name.lower())
-            if custom_app_order is not None:
-                app_menu['order'] = custom_app_order
+        for app_menu in app_menu_map.values():
+            app_menu['menus'].sort(key=sortkeypicker(['order', 'title']))
 
-        for menu in nav_menu.values():
-            menu['menus'].sort(key=sortkeypicker(['order', 'title']))
+        nav_menu.extend(app_menu_map.values())
 
-        nav_menu = list(nav_menu.values())
-        # Sort apps by custom order if any app has order set, else by title
-        if any('order' in app for app in nav_menu):
-            nav_menu.sort(key=lambda x: (x.get('order', 9999), x['title']))
+        # ---- sort top-level entries ----
+        if any(m.get('order') is not None for m in nav_menu):
+            nav_menu.sort(key=lambda x: (x.get('order') or 9999, x['title']))
         else:
             nav_menu.sort(key=lambda x: x['title'])
 
         site_menu.extend(nav_menu)
-
         return site_menu
 
     @filter_hook

@@ -8,16 +8,31 @@
     </li>
     {% for item in nav_menu %}
       <li class="{% if item.menus %}nav-header{% endif %} {% if item.selected %} active{% endif %}">
-        {% if item.url %}<a href="{{ item.url }}" class="section">{% endif %}
-        {% if item.icon %}<i class="fa-fw {{item.icon}}"></i>{% endif %}{{ item.title }}
-        {% if item.url %}</a>{% endif %}
+        {% if item.icon %}<i class="fa-fw {{item.icon}}"></i>
+        {% else %}<i class="fa-fw fa fa-chevron-right"></i>{% endif %}
+        {{ item.title }}
       </li>
       {% for sitem in item.menus %}
-      <li{% if sitem.selected %} class="active"{% endif %}>
-        {% if sitem.url %}<a href="{{ sitem.url }}">{% endif %}
-        {% if sitem.icon %}<i class="fa-fw {{sitem.icon}}"></i>{%else%}<i class="fa-fw fa fa-circle-o"></i>{% endif %}
-        {{ sitem.title }}</span>{% if sitem.url %}</a>{% endif %}
-      </li>
+        {% if sitem.menus %}
+          <li class="nav-sub-header">
+            {% if sitem.icon %}<i class="fa-fw {{sitem.icon}}"></i>
+            {% else %}<i class="fa-fw fa fa-chevron-right"></i>{% endif %}
+            {% trans sitem.title %}
+          </li>
+          {% for ssitem in sitem.menus %}
+          <li{% if ssitem.selected %} class="active"{% endif %}>
+            {% if ssitem.url %}<a href="{{ ssitem.url }}">{% endif %}
+            {% if ssitem.icon %}<i class="fa-fw {{ssitem.icon}}"></i>{%else%}<i class="fa-fw fa fa-circle-o"></i>{% endif %}
+            {{ ssitem.title }}</span>{% if ssitem.url %}</a>{% endif %}
+          </li>
+          {% endfor %}
+        {% else %}
+          <li{% if sitem.selected %} class="active"{% endif %}>
+            {% if sitem.url %}<a href="{{ sitem.url }}">{% endif %}
+            {% if sitem.icon %}<i class="fa-fw {{sitem.icon}}"></i>{%else%}<i class="fa-fw fa fa-chevron-right"></i>{% endif %}
+            {{ sitem.title }}</span>{% if sitem.url %}</a>{% endif %}
+          </li>
+        {% endif %}
       {% endfor %}
     {% endfor %}
     {% view_block 'menu-nav' %}
@@ -34,15 +49,30 @@
         <a href="#" class="section">
           {% if item.icon %}<i class="icon fa-fw {{item.icon}}"></i>
           {% elif item.first_icon %}<i class="icon fa-fw {{item.first_icon}}"></i>
-          {%else%}<i class="icon fa-fw fa fa-circle-o"></i>{% endif %}
+          {%else%}<i class="icon fa-fw fa fa-chevron-right"></i>{% endif %}
         </a><hr/>
         <ul class="dropdown-menu">
           {% for sitem in item.menus %}
-          <li{% if sitem.selected %} class="active"{% endif %}>
-            {% if sitem.url %}<a href="{{ sitem.url }}">{% endif %}
-            {% if sitem.icon %}<i class="fa-fw {{sitem.icon}}"></i>{%else%}<i class="fa-fw fa fa-circle-o"></i>{% endif %}
-            {{ sitem.title }}</span>{% if sitem.url %}</a>{% endif %}
-          </li>
+            {% if sitem.menus %}
+              <li class="dropdown-header">
+                {% if sitem.icon %}<i class="fa-fw {{sitem.icon}}"></i>
+                {% else %}<i class="fa-fw fa fa-chevron-right"></i>{% endif %}
+                {% trans sitem.title %}
+              </li>
+              {% for ssitem in sitem.menus %}
+              <li{% if ssitem.selected %} class="active"{% endif %}>
+                {% if ssitem.url %}<a href="{{ ssitem.url }}">{% endif %}
+                {% if ssitem.icon %}<i class="fa-fw {{ssitem.icon}}"></i>{%else%}<i class="fa-fw fa fa-circle-o"></i>{% endif %}
+                {{ ssitem.title }}</span>{% if ssitem.url %}</a>{% endif %}
+              </li>
+              {% endfor %}
+            {% else %}
+              <li{% if sitem.selected %} class="active"{% endif %}>
+                {% if sitem.url %}<a href="{{ sitem.url }}">{% endif %}
+                {% if sitem.icon %}<i class="fa-fw {{sitem.icon}}"></i>{%else%}<i class="fa-fw fa fa-chevron-right"></i>{% endif %}
+                {{ sitem.title }}</span>{% if sitem.url %}</a>{% endif %}
+              </li>
+            {% endif %}
           {% endfor %}
         </ul>
       </li>

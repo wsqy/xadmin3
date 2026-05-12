@@ -3,31 +3,92 @@
 
 
 {% block navbar_md %}
+<style>
+  .sub-chevron {
+    font-size: 10px;
+    transition: transform 0.2s ease;
+    display: inline-block;
+  }
+  .list-group-header:not(.collapsed) .sub-chevron {
+    transform: rotate(90deg);
+  }
+  .list-group-header:not(.collapsed) .sub-icon {
+    transform: rotate(90deg);
+  }
+  .sub-icon {
+    transition: transform 0.2s ease;
+    display: inline-block;
+    font-size: 12px;
+  }
+  .list-group-header {
+    cursor: pointer;
+    display: block;
+    padding: 8px 0;
+    color: #555;
+    border-bottom: 1px solid #eee;
+    text-decoration: none !important;
+  }
+  .list-group-header:hover {
+    background-color: #f5f5f5;
+  }
+  .list-group-sub .list-group-item {
+    border-left: 2px solid transparent;
+  }
+  .list-group-sub .list-group-item.active {
+    border-left-color: #5bc0de;
+  }
+  .list-group-sub .list-group-item:hover {
+    border-left-color: #ddd;
+  }
+</style>
 <div class="panel-group hide-sm nav-sitemenu col-md-2" id="nav-accordion">
   {% for item in nav_menu %}
+  {% with panel_idx=forloop.counter|stringformat:"s" %}
   <div class="panel panel-{% if item.selected %}info{%else%}default{% endif %}">
     <div class="panel-heading">
       <h6 class="panel-title">
-        <span class="badge badge-info">{{ item.menus|length }}</span>
-        <a class="accordion-toggle" data-toggle="collapse" data-parent="#nav-accordion" href="#nav-panel-{{forloop.counter}}">
-          {% if item.url %}<a href="{{ item.url }}" class="section">{% endif %}
+        <span class="badge badge-info">{% if item.menus %}{{ item.menus|length }}{% endif %}</span>
+        <a class="accordion-toggle" data-toggle="collapse" data-parent="#nav-accordion" href="#nav-panel-{{panel_idx}}">
           {% if item.icon %}<i class="fa-fw {{item.icon}}"></i>
           {% elif item.first_icon %}<i class="fa-fw {{item.first_icon}}"></i>
-          {%else%}<i class="fa-fw fa fa-circle-o"></i>{% endif %}
+          {%else%}<i class="fa-fw fa fa-chevron-right"></i>{% endif %}
           {% trans item.title %}
-          {% if item.url %}</a>{% endif %}
         </a>
       </h6>
     </div>
-    <div id="nav-panel-{{forloop.counter}}" class="list-group panel-collapse collapse{% if item.selected %} in{% endif %}">
+    <div id="nav-panel-{{panel_idx}}" class="list-group panel-collapse collapse{% if item.selected %} in{% endif %}">
       {% for sitem in item.menus %}
-      <a href="{{ sitem.url|default_if_none:'#' }}" class="list-group-item{% if sitem.selected %} active{% endif %}">
-        {% if sitem.icon %}<i class="fa-fw {{sitem.icon}}"></i>{%else%}<i class="fa-fw fa fa-circle-o"></i>{% endif %}
-        {{ sitem.title }}</span>
-      </a>
+        {% if sitem.menus %}
+          <a class="list-group-header accordion-toggle" data-toggle="collapse"
+             href="#nav-sub-panel-{{panel_idx}}-{{forloop.counter}}"
+             style="padding-left:28px;">
+            {% if sitem.icon %}
+              <i class="fa-fw {{sitem.icon}} sub-icon"></i>
+            {% else %}
+              <i class="fa fa-chevron-right sub-chevron"></i>
+            {% endif %}
+            &nbsp;<strong>{% trans sitem.title %}</strong>
+          </a>
+          <div id="nav-sub-panel-{{panel_idx}}-{{forloop.counter}}" class="list-group-sub collapse{% if sitem.selected %} in{% endif %}">
+            {% for ssitem in sitem.menus %}
+            <a href="{{ ssitem.url|default_if_none:'#' }}" class="list-group-item{% if ssitem.selected %} active{% endif %}"
+               style="padding-left:48px;">
+              {% if ssitem.icon %}<i class="fa-fw {{ssitem.icon}}"></i>{%else%}<i class="fa-fw fa fa-circle-o"></i>{% endif %}
+              {{ ssitem.title }}</span>
+            </a>
+            {% endfor %}
+          </div>
+        {% else %}
+          <a href="{{ sitem.url|default_if_none:'#' }}" class="list-group-item{% if sitem.selected %} active{% endif %}"
+             style="padding-left:28px;">
+            {% if sitem.icon %}<i class="fa-fw {{sitem.icon}}"></i>{%else%}<i class="fa-fw fa fa-chevron-right"></i>{% endif %}
+            {{ sitem.title }}</span>
+          </a>
+        {% endif %}
       {% endfor %}
     </div>
   </div>
+  {% endwith %}
   {% endfor %}
 </div>
 {% endblock navbar_md %}
